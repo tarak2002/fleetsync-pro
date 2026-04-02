@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { prisma } from '../index.js';
-import { getJwtSecret } from '../config/jwt.js';
+import { prisma, getJwtSecret } from '../lib/mock.js';
 
 const router = Router();
 const secret = getJwtSecret();

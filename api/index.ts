@@ -20,24 +20,7 @@ import defaultPaymentRoutes, { webhookRouter } from './routes/payments.js';
 // Load environment variables
 dotenv.config();
 
-// Initialize Mock Prisma Client (To prevent crashes if imported elsewhere)
-// Initialize Recursive Mock Prisma Client (To prevent crashes if imported elsewhere)
-const createMockProxy = (name: string = 'prisma'): any => {
-    const fn = (...args: any[]) => {
-        console.warn(`Prisma method "${name}" called in prototype mode.`);
-        return Promise.resolve(null);
-    };
-    return new Proxy(fn, {
-        get: (target, prop) => {
-            if (typeof prop === 'string') {
-                return createMockProxy(`${name}.${prop}`);
-            }
-            return (target as any)[prop];
-        }
-    });
-};
-
-export const prisma = createMockProxy();
+import { prisma } from './lib/mock.js';
 
 // Initialize Express
 const app = express();

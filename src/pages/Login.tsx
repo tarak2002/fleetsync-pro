@@ -37,7 +37,11 @@ export function LoginPage() {
                 navigate('/');
             }
         } catch (err: any) {
-            setError(err.response?.data?.error || 'Login failed');
+            const errorData = err.response?.data?.error;
+            const errorMessage = typeof errorData === 'object' 
+                ? (errorData.message || JSON.stringify(errorData)) 
+                : (errorData || 'Login failed');
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
