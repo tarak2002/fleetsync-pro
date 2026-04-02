@@ -1,0 +1,329 @@
+// Prisma Schema for FleetSync Pro
+// Australian Fleet Management Platform
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum VehicleStatus {
+  DRAFT
+  AVAILABLE
+  RENTED
+  SUSPENDED
+}
+
+enum VevoStatus {
+  PENDING
+  APPROVED
+  DENIED
+  RESTRICTED
+}
+
+enum DriverStatus {
+  PENDING_APPROVAL
+  ACTIVE
+  BLOCKED
+  INACTIVE
+}
+
+enum RentalStatus {
+  ACTIVE
+  COMPLETED
+  TERMINATED
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+enum AlertType {
+  REGO_EXPIRY
+  CTP_EXPIRY
+  PINK_SLIP_EXPIRY
+  VEVO_ISSUE
+  PAYMENT_OVERDUE
+}
+
+enum UserRole {
+  ADMIN
+  DRIVER
+}
+
+// ============ MODELS ============
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(DRIVER)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  driver Driver?
+
+  @@map("users")
+}
+
+model Vehicle {
+  id              String        @id @default(uuid())
+  vin             String        @unique
+  plate           String        @unique
+  make            String
+  model           String
+  year            Int
+  color           String
+  status          VehicleStatus @default(DRAFT)
+
+  // NSW Compliance Dates
+  rego_expiry     DateTime
+  ctp_expiry      DateTime
+  pink_slip_expiry DateTime
+
+  // Financials
+  weekly_rate     Decimal       @default(0) @db.Decimal(10, 2)
+  bond_amount     Decimal       @default(0) @db.Decimal(10, 2)
+  insurance_cost  Decimal       @default(0) @db.Decimal(10, 2) // Annual insurance cost
+
+  // Documents
+  rego_doc        String?
+  ctp_doc         String?
+  pink_slip_doc   String?
+
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  rentals         Rental[]
+  alerts          Alert[]
+
+  @@map("vehicles")
+}
+
+model Driver {
+  id              String       @id @default(uuid())
+  user_id         String?      @unique
+  name            String
+  email           String       @unique
+  phone           String?
+  license_no      String       @unique
+  license_expiry  DateTime?
+  passport_no     String?
+  
+  // VEVO (Visa Verification)
+  vevo_status     VevoStatus   @default(PENDING)
+  vevo_checked_at DateTime?
+  
+  // Driver Status
+  status          DriverStatus @default(PENDING_APPROVAL)
+  balance         Decimal      @default(0) @db.Decimal(10, 2)
+
+  // Documents (paths to uploaded files)
+  passport_doc    String?
+  license_doc     String?
+
+  // Stripe
+  stripe_customer_id       String?  @unique
+  stripe_payment_method_id String?
+
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  user            User?        @relation(fields: [user_id], references: [id])
+  rentals         Rental[]
+
+  @@map("drivers")
+}
+
+model Rental {
+  id              String       @id @default(uuid())
+  driver_id       String
+  vehicle_id      String
+  
+  start_date      DateTime
+  end_date        DateTime?
+  
+  bond_amount     Decimal      @db.Decimal(10, 2)
+  weekly_rate     Decimal      @db.Decimal(10, 2)
+  
+  next_payment_date DateTime
+  status          RentalStatus @default(ACTIVE)
+
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  driver          Driver       @relation(fields: [driver_id], references: [id])
+  vehicle         Vehicle      @relation(fields: [vehicle_id], references: [id])
+  invoices        Invoice[]
+
+  @@map("rentals")
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  rental_id       String
+  
+  // Billing Formula: (Weekly_Rate + Tolls + Fines) - Credits
+  weekly_rate     Decimal       @db.Decimal(10, 2)
+  tolls           Decimal       @default(0) @db.Decimal(10, 2)
+  fines           Decimal       @default(0) @db.Decimal(10, 2)
+  credits         Decimal       @default(0) @db.Decimal(10, 2)
+  amount          Decimal       @db.Decimal(10, 2) // Final calculated amount
+  
+  due_date        DateTime
+  paid_at         DateTime?
+  status          InvoiceStatus @default(PENDING)
+
+  // Stripe
+  stripe_payment_intent_id  String? @unique
+
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  rental          Rental        @relation(fields: [rental_id], references: [id])
+  toll_charges    TollCharge[]
+
+  @@map("invoices")
+}
+
+model TollCharge {
+  id              String   @id @default(uuid())
+  invoice_id      String?
+  plate           String
+  date            DateTime
+  amount          Decimal  @db.Decimal(10, 2)
+  location        String?
+  provider_tx_id  String?  @unique // Linkt or alternative provider's unique ID for this specific drive
+  
+  created_at      DateTime @default(now())
+
+  invoice         Invoice? @relation(fields: [invoice_id], references: [id])
+
+  @@map("toll_charges")
+}
+
+model Alert {
+  id              String    @id @default(uuid())
+  type            AlertType
+  message         String
+  vehicle_id      String?
+  driver_id       String?
+  resolved        Boolean   @default(false)
+  resolved_at     DateTime?
+  
+  created_at      DateTime  @default(now())
+
+  vehicle         Vehicle?  @relation(fields: [vehicle_id], references: [id])
+
+  @@map("alerts")
+}
+
+model OnboardingToken {
+  id              String   @id @default(uuid())
+  token           String   @unique
+  email           String
+  expires_at      DateTime
+  used            Boolean  @default(false)
+  used_at         DateTime?
+  
+  created_at      DateTime @default(now())
+
+  @@map("onboarding_tokens")
+}
+
+model EarningsRecord {
+  id              String   @id @default(uuid())
+  driver_id       String
+  week_starting   DateTime
+  gross_earnings  Decimal  @db.Decimal(10, 2)
+  net_earnings    Decimal  @db.Decimal(10, 2)
+  trips           Int
+  platform        String   @default("uber") // uber, didi, ola
+  
+  created_at      DateTime @default(now())
+
+  @@unique([driver_id, week_starting, platform])
+  @@map("earnings_records")
+}
+
+enum ShiftStatus {
+  NOT_STARTED
+  ACTIVE
+  ENDED
+}
+
+model Shift {
+  id              String      @id @default(uuid())
+  rental_id       String
+  driver_id       String
+  status          ShiftStatus @default(NOT_STARTED)
+  started_at      DateTime?
+  ended_at        DateTime?
+  
+  created_at      DateTime    @default(now())
+  updated_at      DateTime    @updatedAt
+
+  conditionReport ConditionReport?
+
+  @@map("shifts")
+}
+
+model ConditionReport {
+  id              String   @id @default(uuid())
+  shift_id        String   @unique
+  vehicle_id      String
+  driver_id       String
+  
+  // Damage markers as JSON array
+  damage_markers  String? // JSON: [{x, y, description, photo_url}]
+  notes           String?
+  photos          String[] // Array of photo URLs
+  
+  verified_at     DateTime @default(now())
+  created_at      DateTime @default(now())
+
+  shift           Shift    @relation(fields: [shift_id], references: [id])
+
+  @@map("condition_reports")
+}
+
+model AccidentReport {
+  id              String   @id @default(uuid())
+  rental_id       String
+  driver_id       String
+  vehicle_id      String
+  
+  // Step 1: Safety
+  is_safe         Boolean  @default(true)
+  emergency_called Boolean  @default(false)
+  
+  // Step 2: Scene photos
+  scene_photos    String[]
+  
+  // Step 3: Third party details
+  third_party_name String?
+  third_party_phone String?
+  third_party_plate String?
+  third_party_insurer String?
+  
+  description     String?
+  location        String?
+  occurred_at     DateTime
+  
+  // Offline sync
+  synced_at       DateTime?
+  
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  @@map("accident_reports")
+}
