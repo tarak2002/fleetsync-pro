@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
-import { AuthRequest } from '../middleware/auth.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -9,7 +9,7 @@ const router = Router();
  * Retrieves the current user's profile from the database.
  * If the user (from Supabase) doesn't exist in our DB yet, we create them.
  */
-router.get('/me', async (req: AuthRequest, res) => {
+router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
     try {
         if (!req.user) {
             return res.status(401).json({ error: 'Not authenticated' });

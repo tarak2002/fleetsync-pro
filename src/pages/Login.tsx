@@ -5,8 +5,8 @@ import { Car, LogIn, User, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
-import { authApi } from '../lib/api';
-import { setCredentials } from '../store';
+import { authApi, api } from '../lib/api';
+import { setAuthUser } from '../store';
 
 export function LoginPage() {
     const [email, setEmail] = useState('');
@@ -22,10 +22,15 @@ export function LoginPage() {
         setLoading(true);
 
         try {
-            const response = await authApi.login(email, password);
-            const { user, token } = response.data;
+            // 1. Sign in with Supabase
+            await authApi.login(email, password);
+            
+            // 2. Fetch full profile from our backend
+            const profileResponse = await api.get('/api/auth/me');
+            const user = profileResponse.data;
 
-            dispatch(setCredentials({ user, token }));
+            // 3. Update Redux store
+            dispatch(setAuthUser(user));
 
             if (user.driverId) {
                 localStorage.setItem('driverId', user.driverId);
@@ -34,14 +39,11 @@ export function LoginPage() {
             if (user.role === 'DRIVER') {
                 navigate('/dashboard/operations');
             } else {
-                navigate('/');
+                navigate('/admin');
             }
         } catch (err: any) {
-            const errorData = err.response?.data?.error;
-            const errorMessage = typeof errorData === 'object' 
-                ? (errorData.message || JSON.stringify(errorData)) 
-                : (errorData || 'Login failed');
-            setError(errorMessage);
+            console.error('Login error:', err);
+            setError(err.message || 'Login failed. Please check your credentials.');
         } finally {
             setLoading(false);
         }
@@ -53,7 +55,7 @@ export function LoginPage() {
     };
 
     const fillDriverCredentials = () => {
-        setEmail('john.smith@email.com');
+        setEmail('driver@fleetsync.com.au');
         setPassword('driver123');
     };
 

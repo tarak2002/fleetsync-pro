@@ -15,12 +15,14 @@ import complianceRoutes from './routes/compliance.js';
 import analyticsRoutes from './routes/analytics.js';
 import driverDashboardRoutes from './routes/driver-dashboard.js';
 import documentsRoutes from './routes/documents.js';
-import defaultPaymentRoutes, { webhookRouter } from './routes/payments.js';
+import paymentsRouter from './routes/payments.js';
+import webhookRouter from './routes/webhooks.js';
+import { authMiddleware, adminOnly } from './middleware/auth.js';
 
 // Load environment variables
 dotenv.config();
 
-import { prisma } from './lib/mock.js';
+import { prisma } from './lib/prisma.js';
 
 // Initialize Express
 const app = express();
@@ -44,20 +46,20 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString(), mode: 'vercel-prototype' });
 });
 
-// API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/vehicles', vehicleRoutes);
-app.use('/api/drivers', driverRoutes);
-app.use('/api/rentals', rentalRoutes);
-app.use('/api/invoices', invoiceRoutes);
-app.use('/api/onboarding', onboardingRoutes);
-app.use('/api/tolls', tollRoutes);
-app.use('/api/compliance', complianceRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/driver/dashboard', driverDashboardRoutes);
-app.use('/api/documents', documentsRoutes);
-app.use('/api/finance', financeRoutes);
-app.use('/api/payments', defaultPaymentRoutes);
+// API Routes (Protected)
+app.use('/api/auth', authMiddleware, authRoutes);
+app.use('/api/vehicles', authMiddleware, adminOnly, vehicleRoutes);
+app.use('/api/drivers', authMiddleware, adminOnly, driverRoutes);
+app.use('/api/rentals', authMiddleware, adminOnly, rentalRoutes);
+app.use('/api/invoices', authMiddleware, adminOnly, invoiceRoutes);
+app.use('/api/onboarding', authMiddleware, adminOnly, onboardingRoutes);
+app.use('/api/tolls', authMiddleware, adminOnly, tollRoutes);
+app.use('/api/compliance', authMiddleware, adminOnly, complianceRoutes);
+app.use('/api/analytics', authMiddleware, adminOnly, analyticsRoutes);
+app.use('/api/driver/dashboard', authMiddleware, driverDashboardRoutes);
+app.use('/api/documents', authMiddleware, documentsRoutes);
+app.use('/api/finance', authMiddleware, adminOnly, financeRoutes);
+app.use('/api/payments', authMiddleware, paymentsRouter);
 
 // Error handling middleware
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
