@@ -48,10 +48,10 @@ app.get('/health', (req, res) => {
 
 // API Routes (Protected)
 app.use('/api/auth', authMiddleware, authRoutes);
-app.use('/api/vehicles', authMiddleware, adminOnly, vehicleRoutes);
+app.use('/api/vehicles', authMiddleware, vehicleRoutes);
 app.use('/api/drivers', authMiddleware, adminOnly, driverRoutes);
-app.use('/api/rentals', authMiddleware, adminOnly, rentalRoutes);
-app.use('/api/invoices', authMiddleware, adminOnly, invoiceRoutes);
+app.use('/api/rentals', authMiddleware, rentalRoutes);
+app.use('/api/invoices', authMiddleware, invoiceRoutes);
 app.use('/api/onboarding', authMiddleware, adminOnly, onboardingRoutes);
 app.use('/api/tolls', authMiddleware, adminOnly, tollRoutes);
 app.use('/api/compliance', authMiddleware, adminOnly, complianceRoutes);

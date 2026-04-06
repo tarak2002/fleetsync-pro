@@ -80,4 +80,68 @@ router.get('/:id', async (req: AuthRequest, res) => {
     }
 });
 
+// Create a new rental
+router.post('/', async (req: AuthRequest, res) => {
+    try {
+        const { driver_id, vehicle_id, weekly_rate, bond_amount, start_date } = req.body;
+
+        if (!driver_id || !vehicle_id) {
+            return res.status(400).json({ error: 'Driver and Vehicle IDs are required' });
+        }
+
+        // Use transaction to ensure data integrity
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Verify vehicle is available
+            const vehicle = await tx.vehicle.findUnique({
+                where: { id: vehicle_id }
+            });
+
+            if (!vehicle || vehicle.status !== 'AVAILABLE') {
+                throw new Error('Vehicle is no longer available');
+            }
+
+            // 2. Update vehicle status
+            await tx.vehicle.update({
+                where: { id: vehicle_id },
+                data: { status: 'RENTED' }
+            });
+
+            // 3. Create rental
+            const start = start_date ? new Date(start_date) : new Date();
+            const nextPayment = new Date(start);
+            nextPayment.setDate(nextPayment.getDate() + 7);
+
+            const rental = await tx.rental.create({
+                data: {
+                    driver_id,
+                    vehicle_id,
+                    weekly_rate,
+                    bond_amount,
+                    start_date: start,
+                    next_payment_date: nextPayment,
+                    status: 'ACTIVE'
+                }
+            });
+
+            // 4. Create Bond Invoice
+            const invoice = await tx.invoice.create({
+                data: {
+                    rental_id: rental.id,
+                    weekly_rate: 0, // Bond invoice, weekly rate is separate
+                    amount: bond_amount,
+                    due_date: start,
+                    status: 'PENDING'
+                }
+            });
+
+            return { rental, invoice };
+        });
+
+        res.status(201).json(result);
+    } catch (error: any) {
+        console.error('Rental Creation Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 export default router;

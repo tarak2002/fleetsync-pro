@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
+import { adminOnly } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ const getComplianceColor = (expiryDate: Date) => {
 };
 
 // Get all vehicles with optional status filter
-router.get('/', async (req, res) => {
+router.get('/', adminOnly, async (req, res) => {
     try {
         const { status } = req.query;
         const vehicles = await prisma.vehicle.findMany({
@@ -86,7 +87,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', adminOnly, async (req, res) => {
     try {
         const vehicle = await prisma.vehicle.create({
             data: req.body

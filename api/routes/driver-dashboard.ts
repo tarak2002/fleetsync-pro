@@ -18,6 +18,9 @@ router.get('/active-rental', async (req: AuthRequest, res) => {
             },
             include: {
                 vehicle: true
+            },
+            orderBy: {
+                created_at: 'desc'
             }
         });
 

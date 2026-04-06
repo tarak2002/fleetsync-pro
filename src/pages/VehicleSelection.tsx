@@ -72,7 +72,7 @@ export function VehicleSelection() {
             });
 
             // Redirect to dashboard
-            navigate('/driver-dashboard');
+            navigate('/dashboard/operations');
         } catch (error: any) {
             console.error('Failed to select vehicle:', error);
             const message = error.response?.data?.error || 'Failed to process vehicle selection. Please try again.';
