@@ -145,36 +145,45 @@ const fleetSlice = createSlice({
 export const { clearError } = fleetSlice.actions;
 
 // Auth slice
+interface AuthUser {
+    id: string;
+    email: string;
+    name?: string;
+    role: string;
+    driverId?: string;
+}
+
 interface AuthState {
-    user: { id: string; email: string; name: string; role: string } | null;
-    token: string | null;
+    user: AuthUser | null;
     isAuthenticated: boolean;
+    loading: boolean;
 }
 
 const authSlice = createSlice({
     name: 'auth',
     initialState: {
         user: null,
-        token: typeof window !== 'undefined' ? localStorage.getItem('token') : null,
-        isAuthenticated: typeof window !== 'undefined' ? !!localStorage.getItem('token') : false,
+        isAuthenticated: false,
+        loading: true,
     } as AuthState,
     reducers: {
-        setCredentials: (state, action: PayloadAction<{ user: AuthState['user']; token: string }>) => {
-            state.user = action.payload.user;
-            state.token = action.payload.token;
-            state.isAuthenticated = true;
-            localStorage.setItem('token', action.payload.token);
+        setAuthUser: (state, action: PayloadAction<AuthUser | null>) => {
+            state.user = action.payload;
+            state.isAuthenticated = !!action.payload;
+            state.loading = false;
+        },
+        setLoading: (state, action: PayloadAction<boolean>) => {
+            state.loading = action.payload;
         },
         logout: (state) => {
             state.user = null;
-            state.token = null;
             state.isAuthenticated = false;
-            localStorage.removeItem('token');
+            state.loading = false;
         },
     },
 });
 
-export const { setCredentials, logout } = authSlice.actions;
+export const { setAuthUser, setLoading, logout: logoutAction } = authSlice.actions;
 
 // Store
 export const store = configureStore({

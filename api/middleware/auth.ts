@@ -1,11 +1,12 @@
-import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
+import { supabase } from '../lib/supabase.js';
 
 export interface AuthRequest extends Request {
     user?: {
         id: string;
         email: string;
-        role: string;
+        name?: string;
+        role?: string;
         driverId?: string;
     };
 }
@@ -18,41 +19,31 @@ export const authMiddleware = async (
     try {
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            // --- VERCEL PROTOTYPE MOCK (Allow easy testing) ---
-            req.user = { id: 'mock-admin-id', email: 'admin@fleetsync.com.au', role: 'ADMIN' };
-            return next();
+            return res.status(401).json({ error: 'No token provided' });
         }
 
         const token = authHeader.split(' ')[1];
         
-        // --- VERCEL PROTOTYPE MOCK (Direct return based on token content or default) ---
-        if (token === 'mock-admin-token') {
-            req.user = { id: 'mock-admin-id', email: 'admin@fleetsync.com.au', role: 'ADMIN' };
-            return next();
-        }
-        if (token === 'mock-driver-token') {
-            req.user = { id: 'mock-driver-id', email: 'driver@fleetsync.com.au', role: 'DRIVER', driverId: 'mock-driver-profile-id' };
-            return next();
+        // Verify with Supabase
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+
+        if (error || !user) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
         }
 
-        // Generic decoding without DB check
-        const secret = process.env.JWT_SECRET || 'secret';
-        try {
-            const decoded = jwt.verify(token, secret) as any;
-            req.user = {
-                id: decoded.id || 'mock-id',
-                email: decoded.email || 'user@example.com',
-                role: decoded.role || 'ADMIN',
-                driverId: decoded.role === 'DRIVER' ? 'mock-driver-profile-id' : undefined
-            };
-            return next();
-        } catch (e) {
-            // Default to admin for the prototype if token is invalid but present
-            req.user = { id: 'mock-admin-id', email: 'admin@fleetsync.com.au', role: 'ADMIN' };
-            return next();
-        }
-    } catch (error) {
+        // Extract role and other metadata from Supabase user
+        // We'll trust the roles we store in user_metadata or set via Supabase claims
+        req.user = {
+            id: user.id,
+            email: user.email || '',
+            role: user.user_metadata?.role || 'DRIVER',
+            driverId: user.user_metadata?.driverId
+        };
+        
         next();
+    } catch (error) {
+        console.error('Auth Middleware Error:', error);
+        res.status(401).json({ error: 'Authentication failed' });
     }
 };
 
@@ -61,6 +52,8 @@ export const adminOnly = (
     res: Response,
     next: NextFunction
 ) => {
-    // For prototype, we allow everyone to see admin features to ensure demo success
+    if (req.user?.role !== 'ADMIN') {
+        return res.status(403).json({ error: 'Access denied: Admin only' });
+    }
     next();
 };

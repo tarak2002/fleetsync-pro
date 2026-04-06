@@ -1,40 +1,46 @@
 import { Router } from 'express';
+import { prisma } from '../lib/prisma.js';
+import { AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
-// Mock Driver dashboard data
-router.get('/active-rental', (req, res) => {
-    // --- VERCEL PROTOTYPE MOCK ---
-    return res.json({
-        has_active_rental: true,
-        rental_id: 'mock-rental-id',
-        vehicle: {
-            id: 'v1',
-            make: 'Toyota',
-            model: 'Camry',
-            plate: 'ABC-123',
-            vin: 'VIN123456789',
-            color: 'Silver',
-            year: 2023,
-            imageUrl: '/images/vehicles/toyota-camry.jpg'
-        },
-        documents: {
-            regoUrl: '/api/documents/rego/v1',
-            ctpUrl: '/api/documents/ctp/v1',
-            pinkSlipUrl: '/api/documents/pink-slip/v1',
-            rentalAgreementUrl: '/api/documents/rental-agreement/v1'
-        },
-        shift_id: 'mock-shift-id',
-        shift_status: 'NOT_STARTED',
-        started_at: null,
-        last_condition_report: new Date(Date.now() - 86400000).toISOString()
-    });
-});
+// Driver dashboard data
+router.get('/active-rental', async (req: AuthRequest, res) => {
+    try {
+        if (!req.user || req.user.role !== 'DRIVER') {
+            return res.status(403).json({ error: 'Driver access required' });
+        }
 
-// Other driver actions
-router.post('/start-shift', (req, res) => res.json({ success: true, shift: { id: 'mock-shift-id', status: 'ACTIVE' } }));
-router.post('/end-shift', (req, res) => res.json({ success: true }));
-router.post('/return-vehicle', (req, res) => res.json({ success: true, message: 'Return request submitted' }));
-router.post('/accident-report', (req, res) => res.json({ success: true }));
+        const activeRental = await prisma.rental.findFirst({
+            where: { 
+                driver_id: req.user.driverId,
+                status: 'ACTIVE'
+            },
+            include: {
+                vehicle: true
+            }
+        });
+
+        if (!activeRental) {
+            return res.json({ has_active_rental: false });
+        }
+
+        res.json({
+            has_active_rental: true,
+            rental_id: activeRental.id,
+            vehicle: activeRental.vehicle,
+            documents: {
+                regoUrl: `/api/documents/rego/${activeRental.vehicle.id}`,
+                ctpUrl: `/api/documents/ctp/${activeRental.vehicle.id}`,
+                pinkSlipUrl: `/api/documents/pink-slip/${activeRental.vehicle.id}`,
+                rentalAgreementUrl: `/api/documents/rental-agreement/${activeRental.id}`
+            },
+            shift_status: 'NOT_STARTED', // Extend this based on a Shift model in the future
+            last_condition_report: new Date(Date.now() - 86400000).toISOString()
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 export default router;

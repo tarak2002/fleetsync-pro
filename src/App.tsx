@@ -4,6 +4,11 @@ import type { RootState } from './store';
 import { store } from './store';
 import { Layout } from './components/layout/Layout';
 import { Dashboard } from './pages/Dashboard';
+import ErrorBoundary from './components/common/ErrorBoundary';
+import { supabase } from './lib/supabase';
+import { setAuthUser } from './store';
+import { useEffect } from 'react';
+import { useDispatch } from 'react-redux';
 import { FleetPage } from './pages/Fleet';
 import { DriversPage } from './pages/Drivers';
 import { RentalsPage } from './pages/Rentals';
@@ -22,7 +27,46 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
-  const { isAuthenticated, user } = useSelector((state: RootState) => state.auth);
+  const { isAuthenticated, user, loading } = useSelector((state: RootState) => state.auth);
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    // 1. Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        dispatch(setAuthUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          name: session.user.user_metadata?.full_name,
+          role: session.user.user_metadata?.role || 'DRIVER',
+          driverId: session.user.user_metadata?.driverId
+        }));
+      } else {
+        dispatch(setAuthUser(null));
+      }
+    });
+
+    // 2. Listen for changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        dispatch(setAuthUser({
+          id: session.user.id,
+          email: session.user.email || '',
+          name: session.user.user_metadata?.full_name,
+          role: session.user.user_metadata?.role || 'DRIVER',
+          driverId: session.user.user_metadata?.driverId
+        }));
+      } else {
+        dispatch(setAuthUser(null));
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [dispatch]);
+
+  if (loading) {
+    return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
+  }
 
   return (
     <Routes>
@@ -70,11 +114,13 @@ function AppRoutes() {
 
 function App() {
   return (
-    <Provider store={store}>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-    </Provider>
+    <ErrorBoundary>
+      <Provider store={store}>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </Provider>
+    </ErrorBoundary>
   );
 }
 

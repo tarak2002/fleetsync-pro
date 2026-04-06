@@ -1,27 +1,56 @@
 import { Router } from 'express';
+import { prisma } from '../lib/prisma.js';
 
 const router = Router();
 
 // Get Admin Finance Dashboard
-router.get('/dashboard', (req, res) => {
-    return res.json({
-        income: 24850.00,
-        expenses: 4210.50,
-        net_profit: 20639.50,
-        period_days: 30
-    });
+router.get('/dashboard', async (req, res) => {
+    try {
+        const income = await prisma.invoice.aggregate({
+            where: { status: 'PAID' },
+            _sum: { amount: true }
+        });
+
+        const totalIncome = Number(income._sum.amount || 0);
+        const expenses = totalIncome * 0.2; // Simulating 20% overhead for now
+
+        res.json({
+            income: totalIncome,
+            expenses: expenses,
+            net_profit: totalIncome - expenses,
+            period_days: 30
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // Get Insurance Breakdown
-router.get('/insurance', (req, res) => {
-    return res.json([
-        { vehicle_id: 'v1', plate: 'ABC-123', make: 'Toyota', model: 'Camry', insurance_cost_annual: 1800, insurance_cost_daily: "4.93", current_driver: 'Demo Driver' },
-        { vehicle_id: 'v2', plate: 'ELN-001', make: 'Tesla', model: 'Model 3', insurance_cost_annual: 2400, insurance_cost_daily: "6.58", current_driver: 'Jane Smith' },
-        { vehicle_id: 'v3', plate: 'EV-999', make: 'BYD', model: 'Atto 3', insurance_cost_annual: 2100, insurance_cost_daily: "5.75", current_driver: 'Robert Brown' },
-        { vehicle_id: 'v4', plate: 'XYZ-789', make: 'Hyundai', model: 'Ioniq 5', insurance_cost_annual: 2200, insurance_cost_daily: "6.03", current_driver: 'John Doe' },
-        { vehicle_id: 'v5', plate: 'POL-101', make: 'Polestar', model: '2', insurance_cost_annual: 2600, insurance_cost_daily: "7.12", current_driver: 'Charlie Davis' },
-        { vehicle_id: 'v6', plate: 'FLT-555', make: 'Kia', model: 'EV6', insurance_cost_annual: 2300, insurance_cost_daily: "6.30", current_driver: 'Alice Wilson' }
-    ]);
+router.get('/insurance', async (req, res) => {
+    try {
+        const vehicles = await prisma.vehicle.findMany({
+            include: {
+                rentals: {
+                    where: { status: 'ACTIVE' },
+                    include: { driver: true }
+                }
+            }
+        });
+
+        const formatted = vehicles.map(v => ({
+            vehicle_id: v.id,
+            plate: v.plate,
+            make: v.make,
+            model: v.model,
+            insurance_cost_annual: 2000, // Default or fetch from vehicle meta
+            insurance_cost_daily: (2000 / 365).toFixed(2),
+            current_driver: v.rentals[0]?.driver.name || 'None'
+        }));
+
+        res.json(formatted);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 export default router;

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { supabase } from './supabase';
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -10,10 +11,10 @@ export const api = axios.create({
 });
 
 // Request interceptor for auth token
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+api.interceptors.request.use(async (config) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+        config.headers.Authorization = `Bearer ${session.access_token}`;
     }
     return config;
 });
@@ -32,11 +33,33 @@ api.interceptors.response.use(
 
 // API functions
 export const authApi = {
-    login: (email: string, password: string) =>
-        api.post('/api/auth/login', { email, password }),
-    register: (data: { email: string; password: string; name: string }) =>
-        api.post('/api/auth/register', data),
-    me: () => api.get('/api/auth/me'),
+    login: async (email: string, password: string) => {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        return data;
+    },
+    register: async (data: { email: string; password: string; name: string }) => {
+        const { data: authData, error } = await supabase.auth.signUp({
+            email: data.email,
+            password: data.password,
+            options: {
+                data: {
+                    full_name: data.name,
+                }
+            }
+        });
+        if (error) throw error;
+        return authData;
+    },
+    me: async () => {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        return user;
+    },
+    logout: async () => {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+    }
 };
 
 export const vehiclesApi = {

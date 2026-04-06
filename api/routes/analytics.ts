@@ -1,63 +1,86 @@
 import { Router } from 'express';
+import { prisma } from '../lib/prisma.js';
 
 const router = Router();
 
-// Match frontend's analyticsApi.getDashboard() -> /api/analytics/dashboard
-router.get('/dashboard', (req, res) => {
-    // --- VERCEL PROTOTYPE MOCK (Aligned with DashboardStats interface) ---
-    return res.json({
-        vehicles: {
-            total: 15,
-            byStatus: {
-                'AVAILABLE': 4,
-                'RENTED': 8,
-                'MAINTENANCE': 2,
-                'DRAFT': 1
-            }
-        },
-        drivers: {
-            total: 12,
-            byStatus: {
-                'ACTIVE': 8,
-                'PENDING_APPROVAL': 2,
-                'INACTIVE': 2
-            }
-        },
-        rentals: {
-            active: 8
-        },
-        invoices: {
-            pending: {
-                count: 3,
-                total: 15400.50
+// Dashboard Stats
+router.get('/dashboard', async (req, res) => {
+    try {
+        const [
+            totalVehicles,
+            vehicleStatuses,
+            totalDrivers,
+            driverStatuses,
+            activeRentals,
+            pendingInvoices,
+            overdueInvoices,
+            totalAlerts
+        ] = await Promise.all([
+            prisma.vehicle.count(),
+            prisma.vehicle.groupBy({ by: ['status'], _count: true }),
+            prisma.driver.count(),
+            prisma.driver.groupBy({ by: ['status'], _count: true }),
+            prisma.rental.count({ where: { status: 'ACTIVE' } }),
+            prisma.invoice.aggregate({
+                where: { status: 'PENDING' },
+                _count: true,
+                _sum: { amount: true }
+            }),
+            prisma.invoice.aggregate({
+                where: { status: 'OVERDUE' },
+                _count: true,
+                _sum: { amount: true }
+            }),
+            prisma.alert.count({ where: { resolved: false } })
+        ]);
+
+        const vehicleByStatus = vehicleStatuses.reduce((acc, curr) => ({
+            ...acc, [curr.status]: curr._count
+        }), {});
+
+        const driverByStatus = driverStatuses.reduce((acc, curr) => ({
+            ...acc, [curr.status]: curr._count
+        }), {});
+
+        res.json({
+            vehicles: {
+                total: totalVehicles,
+                byStatus: vehicleByStatus
             },
-            overdue: {
-                count: 1,
-                total: 2150.00
-            }
-        },
-        alerts: 2
-    });
+            drivers: {
+                total: totalDrivers,
+                byStatus: driverByStatus
+            },
+            rentals: {
+                active: activeRentals
+            },
+            invoices: {
+                pending: {
+                    count: pendingInvoices._count,
+                    total: pendingInvoices._sum.amount || 0
+                },
+                overdue: {
+                    count: overdueInvoices._count,
+                    total: overdueInvoices._sum.amount || 0
+                }
+            },
+            alerts: totalAlerts
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
-router.get('/rental-breakdown', (req, res) => {
-    return res.json([
-        { status: 'ACTIVE', count: 8 },
-        { status: 'PENDING', count: 3 },
-        { status: 'ENDED', count: 4 }
-    ]);
-});
-
-router.get('/revenue-history', (req, res) => {
-    return res.json([
-        { date: '2025-03-27', amount: 4200 },
-        { date: '2025-03-28', amount: 3800 },
-        { date: '2025-03-29', amount: 4500 },
-        { date: '2025-03-30', amount: 5100 },
-        { date: '2025-03-31', amount: 4800 },
-        { date: '2025-04-01', amount: 5200 },
-        { date: '2025-04-02', amount: 4900 }
-    ]);
+router.get('/rental-breakdown', async (req, res) => {
+    try {
+        const breakdown = await prisma.rental.groupBy({
+            by: ['status'],
+            _count: true
+        });
+        res.json(breakdown.map(b => ({ status: b.status, count: b._count })));
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
 });
 
 export default router;
