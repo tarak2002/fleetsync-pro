@@ -183,7 +183,7 @@ const authSlice = createSlice({
     },
 });
 
-export const { setAuthUser, setLoading, logout: logoutAction } = authSlice.actions;
+export const { setAuthUser, setLoading, logout } = authSlice.actions;
 
 // Store
 export const store = configureStore({
