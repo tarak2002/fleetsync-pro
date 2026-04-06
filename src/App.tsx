@@ -32,22 +32,27 @@ function AppRoutes() {
 
   useEffect(() => {
     // 1. Check current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        dispatch(setAuthUser({
-          id: session.user.id,
-          email: session.user.email || '',
-          name: session.user.user_metadata?.full_name,
-          role: session.user.user_metadata?.role || 'DRIVER',
-          driverId: session.user.user_metadata?.driverId
-        }));
-      } else {
-        dispatch(setAuthUser(null));
-      }
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }: any) => {
+        if (session?.user) {
+          dispatch(setAuthUser({
+            id: session.user.id,
+            email: session.user.email || '',
+            name: session.user.user_metadata?.full_name,
+            role: session.user.user_metadata?.role || 'DRIVER',
+            driverId: session.user.user_metadata?.driverId
+          }));
+        } else {
+          dispatch(setAuthUser(null));
+        }
+      })
+      .catch((err: any) => {
+        console.error('Failed to get Supabase session:', err);
+        dispatch(setAuthUser(null)); // Stop loading on error
+      });
 
     // 2. Listen for changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       if (session?.user) {
         dispatch(setAuthUser({
           id: session.user.id,
