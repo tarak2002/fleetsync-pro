@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { stripe } from '../lib/stripe.js';
-import { prisma } from '../lib/prisma.js';
+import { stripe } from '../_lib/stripe.js';
+import { prisma } from '../_lib/prisma.js';
 
 const router = Router();
 

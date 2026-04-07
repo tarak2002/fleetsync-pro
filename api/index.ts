@@ -3,26 +3,26 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 
 // Routes (Mocked versions)
-import vehicleRoutes from './routes/vehicles.js';
-import driverRoutes from './routes/drivers.js';
-import rentalRoutes from './routes/rentals.js';
-import financeRoutes from './routes/finance.js';
-import invoiceRoutes from './routes/invoices.js';
-import onboardingRoutes from './routes/onboarding.js';
-import tollRoutes from './routes/tolls.js';
-import authRoutes from './routes/auth.js';
-import complianceRoutes from './routes/compliance.js';
-import analyticsRoutes from './routes/analytics.js';
-import driverDashboardRoutes from './routes/driver-dashboard.js';
-import documentsRoutes from './routes/documents.js';
-import paymentsRouter from './routes/payments.js';
-import webhookRouter from './routes/webhooks.js';
-import { authMiddleware, adminOnly } from './middleware/auth.js';
+import vehicleRoutes from './_routes/vehicles.js';
+import driverRoutes from './_routes/drivers.js';
+import rentalRoutes from './_routes/rentals.js';
+import financeRoutes from './_routes/finance.js';
+import invoiceRoutes from './_routes/invoices.js';
+import onboardingRoutes from './_routes/onboarding.js';
+import tollRoutes from './_routes/tolls.js';
+import authRoutes from './_routes/auth.js';
+import complianceRoutes from './_routes/compliance.js';
+import analyticsRoutes from './_routes/analytics.js';
+import driverDashboardRoutes from './_routes/driver-dashboard.js';
+import documentsRoutes from './_routes/documents.js';
+import paymentsRouter from './_routes/payments.js'; // Wait, I should check if I missed one
+import webhookRouter from './_routes/webhooks.js';
+import { authMiddleware, adminOnly } from './_middleware/auth.js';
 
 // Load environment variables
 dotenv.config();
 
-import { prisma } from './lib/prisma.js';
+import { prisma } from './_lib/prisma.js';
 
 // Initialize Express
 const app = express();
