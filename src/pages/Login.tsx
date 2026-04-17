@@ -23,6 +23,7 @@ export function LoginPage() {
 
         try {
             // 1. Sign in with Supabase
+            console.log('Attempting login with:', { email, passwordLength: password.length });
             await authApi.login(email, password);
             
             // 2. Fetch full profile from our backend
