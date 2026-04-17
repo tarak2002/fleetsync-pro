@@ -1,5 +1,5 @@
-import { prisma } from '../index.js';
-import { InvoiceStatus } from '@prisma/client';
+import { supabase } from '../_lib/supabase.js';
+import { InvoiceStatus } from '../_lib/database.types.js';
 
 export class TollService {
     /**
@@ -15,9 +15,13 @@ export class TollService {
     }) {
         try {
             // 1. Deduplication Check
-            const existingToll = await prisma.tollCharge.findUnique({
-                where: { provider_tx_id: tollData.provider_tx_id }
-            });
+            const { data: existingToll, error: checkError } = await supabase
+                .from('toll_charges')
+                .select('id')
+                .eq('provider_tx_id', tollData.provider_tx_id)
+                .maybeSingle();
+
+            if (checkError) throw checkError;
 
             if (existingToll) {
                 console.log(`[Tolls] Skipping duplicate toll: ${tollData.provider_tx_id}`);
@@ -25,28 +29,27 @@ export class TollService {
             }
 
             // 2. Find the active Rental for this plate at the EXACT date and time
-            const matchingRental = await prisma.rental.findFirst({
-                where: {
-                    vehicle: { plate: tollData.plate },
-                    start_date: { lte: tollData.date },
-                    OR: [
-                        { end_date: null }, // Ongoing rental
-                        { end_date: { gte: tollData.date } } // Rental ended but was active during the toll
-                    ]
-                },
-                include: {
-                    driver: true,
-                    invoices: {
-                        where: { status: InvoiceStatus.PENDING },
-                        orderBy: { due_date: 'asc' },
-                        take: 1
-                    }
-                }
-            });
+            // We need to join vehicles to check the plate
+            const { data: rentals, error: rentalError } = await supabase
+                .from('rentals')
+                .select(`
+                    *,
+                    driver:drivers(*),
+                    vehicle:vehicles!inner(plate),
+                    invoices(*)
+                `)
+                .eq('vehicles.plate', tollData.plate)
+                .lte('start_date', tollData.date.toISOString())
+                .or(`end_date.is.null,end_date.gte.${tollData.date.toISOString()}`)
+                .eq('invoices.status', 'PENDING')
+                .order('due_date', { foreignTable: 'invoices', ascending: true });
 
+            if (rentalError) throw rentalError;
+
+            const matchingRental = rentals?.[0];
             let assignedInvoiceId = null;
 
-            if (matchingRental && matchingRental.invoices.length > 0) {
+            if (matchingRental && matchingRental.invoices && matchingRental.invoices.length > 0) {
                 // We have a driver and an open invoice to attach it to!
                 const activeInvoice = matchingRental.invoices[0];
                 assignedInvoiceId = activeInvoice.id;
@@ -55,30 +58,36 @@ export class TollService {
                 const newTollsTotal = Number(activeInvoice.tolls) + tollData.amount;
                 const newTotalAmount = Number(activeInvoice.weekly_rate) + newTollsTotal + Number(activeInvoice.fines) - Number(activeInvoice.credits);
 
-                await prisma.invoice.update({
-                    where: { id: activeInvoice.id },
-                    data: {
+                const { error: updateError } = await supabase
+                    .from('invoices')
+                    .update({
                         tolls: newTollsTotal,
                         amount: newTotalAmount
-                    }
-                });
+                    })
+                    .eq('id', activeInvoice.id);
 
-                console.log(`[Tolls] Matched toll for ${tollData.plate} to Driver: ${matchingRental.driver.name}. Added $${tollData.amount} to Invoice ${activeInvoice.id}`);
+                if (updateError) throw updateError;
+
+                console.log(`[Tolls] Matched toll for ${tollData.plate} to Driver: ${matchingRental.driver?.name}. Added $${tollData.amount} to Invoice ${activeInvoice.id}`);
             } else {
                 console.warn(`[Tolls] WARNING: Toll for ${tollData.plate} at ${tollData.date} could not be matched to an active rental/invoice. It will be recorded unassigned.`);
             }
 
             // 3. Save the Toll Event to the database
-            const tollRecording = await prisma.tollCharge.create({
-                data: {
+            const { data: tollRecording, error: insertError } = await supabase
+                .from('toll_charges')
+                .insert({
                     plate: tollData.plate,
-                    date: tollData.date,
+                    date: tollData.date.toISOString(),
                     amount: tollData.amount,
                     location: tollData.location,
                     provider_tx_id: tollData.provider_tx_id,
                     invoice_id: assignedInvoiceId
-                }
-            });
+                })
+                .select()
+                .single();
+
+            if (insertError) throw insertError;
 
             return tollRecording;
 
@@ -90,23 +99,22 @@ export class TollService {
 
     /**
      * Automated job to pull yesterday's tolls from Linkt.
-     * In a real implementation, this would use the LINKT_CLIENT_ID to pull from their SOAP/REST API
-     * or process an SFTP CSV file drop.
      */
     static async syncDailyTolls() {
         console.log('[Tolls] Starting Daily Linkt Sync...');
 
         // --- MOCK LINKT API DATA IMPLEMENTATION --- 
-        // We simulate polling the provider for new tolls on our fleet vehicles
+        const { data: rentedVehicles, error: vehicleError } = await supabase
+            .from('vehicles')
+            .select('plate')
+            .eq('status', 'RENTED')
+            .limit(3);
 
-        const rentedVehicles = await prisma.vehicle.findMany({
-            where: { status: 'RENTED' },
-            take: 3 // Let's simulate hits on 3 cars
-        });
+        if (vehicleError) throw vehicleError;
 
         let processed = 0;
 
-        for (const vehicle of rentedVehicles) {
+        for (const vehicle of rentedVehicles || []) {
             // Generate a fake toll event for yesterday
             const tollDate = new Date();
             tollDate.setDate(tollDate.getDate() - 1);

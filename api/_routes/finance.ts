@@ -72,7 +72,7 @@ router.get('/insurance', async (req, res) => {
                 plate: v.plate,
                 make: v.make,
                 model: v.model,
-                current_driver: activeRental?.driver?.name || '—',
+                current_driver: (activeRental?.driver as any)?.[0]?.name || '—',
                 insurance_cost_annual: annualCost,
                 insurance_cost_daily: annualCost / 365
             };
