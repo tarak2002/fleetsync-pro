@@ -1,4 +1,4 @@
-import { VevoStatus } from '@prisma/client';
+import { VevoStatus } from '../_lib/database.types.js';
 import json2xml from 'json2xml';
 
 const DHA_B2B_ENDPOINT = process.env.VEVO_B2B_ENDPOINT || '';
@@ -12,9 +12,9 @@ export class VevoService {
      */
     private static mockVevoCheck(passport_no: string): VevoStatus {
         if (passport_no.endsWith('0000')) {
-            return VevoStatus.DENIED;
+            return 'DENIED';
         }
-        return VevoStatus.APPROVED;
+        return 'APPROVED';
     }
 
     /**
@@ -32,9 +32,7 @@ export class VevoService {
             throw new Error('VEVO Gateway is not configured properly.');
         }
 
-        // Real B2B Gateway Integration
-        // Note: Full B2B integration requires specific wsdl schema generation.
-        // This constructs a simplified representation of the expected WS-Security SOAP envelope.
+        // Real B2B Gateway Integration logic remains the same...
         try {
             const soapRequest = this.buildSoapRequest(passportNumber, dob, nationality);
 
@@ -44,14 +42,14 @@ export class VevoService {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'text/xml;charset=UTF-8',
-                    'SOAPAction': '"http://www.diac.gov.au/vevo/b2b/CheckVisaStatus"' // Example action
+                    'SOAPAction': '"http://www.diac.gov.au/vevo/b2b/CheckVisaStatus"'
                 },
                 body: soapRequest
             });
 
             if (!response.ok) {
                 console.error(`[VEVO Service] Gateway error: HTTP ${response.status}`);
-                return VevoStatus.PENDING; // Fail open to allow manual admin review if gateway fails
+                return 'PENDING';
             }
 
             const responseText = await response.text();
@@ -59,14 +57,12 @@ export class VevoService {
 
         } catch (error) {
             console.error('[VEVO Service] Exception during gateway call:', error);
-            return VevoStatus.PENDING; // Graceful degradation
+            return 'PENDING';
         }
     }
 
     private static buildSoapRequest(passportNumber: string, dob?: Date, nationality?: string): string {
         const timestamp = new Date().toISOString();
-
-        // Constructing the JSON representation for the json2xml converter
         const envelope = {
             'soapenv:Envelope': {
                 '@xmlns:soapenv': 'http://schemas.xmlsoap.org/soap/envelope/',
@@ -83,8 +79,8 @@ export class VevoService {
                 'soapenv:Body': {
                     'vev:CheckVisaStatusRequest': {
                         'vev:TravelDocumentNumber': passportNumber,
-                        'vev:DateOfBirth': dob ? dob.toISOString().split('T')[0] : '1990-01-01', // Example fallback
-                        'vev:CountryOfDocument': nationality || 'AUS' // Example fallback
+                        'vev:DateOfBirth': dob ? dob.toISOString().split('T')[0] : '1990-01-01',
+                        'vev:CountryOfDocument': nationality || 'AUS'
                     }
                 }
             }
@@ -94,17 +90,13 @@ export class VevoService {
     }
 
     private static parseSoapResponse(responseXml: string): VevoStatus {
-        // In a real implementation, you would use an XML parser like fast-xml-parser
-        // This is a simplified regex parsing for the POC
         if (responseXml.includes('<WorkEntitlement>Unlimited</WorkEntitlement>') || responseXml.includes('<VisaStatus>In Effect</VisaStatus>')) {
-            return VevoStatus.APPROVED;
+            return 'APPROVED';
         } else if (responseXml.includes('<WorkEntitlement>None</WorkEntitlement>')) {
-            return VevoStatus.DENIED;
+            return 'DENIED';
         } else if (responseXml.includes('<WorkEntitlement>Limited</WorkEntitlement>')) {
-            return VevoStatus.RESTRICTED;
+            return 'RESTRICTED';
         }
-
-        // If parsing fails or status is unknown
-        return VevoStatus.PENDING;
+        return 'PENDING';
     }
 }

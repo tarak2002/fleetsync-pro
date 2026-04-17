@@ -30,14 +30,29 @@ export function DriversPage() {
     const [generatedLink, setGeneratedLink] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
+    const [approvingDriver, setApprovingDriver] = useState<any>(null);
 
     useEffect(() => {
         dispatch(fetchDrivers());
     }, [dispatch]);
 
-    const handleApprove = async (id: string) => {
-        await driversApi.approve(id);
-        dispatch(fetchDrivers());
+    const handleApprove = (driver: any) => {
+        setApprovingDriver(driver);
+    };
+
+    const confirmApprove = async () => {
+        if (!approvingDriver) return;
+        setSubmitting(true);
+        try {
+            await driversApi.approve(approvingDriver.id);
+            dispatch(fetchDrivers());
+            setApprovingDriver(null);
+        } catch (error: any) {
+            alert(error.response?.data?.error || 'Failed to approve driver');
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const handleBlock = async (id: string) => {
@@ -92,7 +107,7 @@ export function DriversPage() {
                 </div>
                 <Dialog open={dialogOpen} onOpenChange={(open) => open ? setDialogOpen(true) : handleCloseDialog()}>
                     <DialogTrigger asChild>
-                        <Button className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200">
+                        <Button id="invite-driver-btn" className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-200">
                             <Plus className="w-4 h-4" />
                             Invite Driver
                         </Button>
@@ -168,117 +183,173 @@ export function DriversPage() {
                 </Dialog>
             </div>
 
-            {/* Filters */}
-            <Card>
-                <CardContent className="p-4">
-                    <div className="flex flex-col sm:flex-row gap-4">
-                        <div className="relative flex-1">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                            <Input
-                                placeholder="Search by name, email or license..."
-                                className="pl-10"
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                            />
-                        </div>
-                        <div className="flex gap-2 flex-wrap">
-                            {['all', 'ACTIVE', 'PENDING_APPROVAL', 'BLOCKED'].map((status) => (
-                                <Button
-                                    key={status}
-                                    variant={statusFilter === status ? 'default' : 'outline'}
-                                    size="sm"
-                                    onClick={() => setStatusFilter(status)}
-                                >
-                                    {status === 'all' ? 'All' : status.replace('_', ' ')}
-                                </Button>
-                            ))}
+            {/* Approval Confirmation Dialog */}
+            <Dialog open={!!approvingDriver} onOpenChange={(open) => !open && setApprovingDriver(null)}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Confirm Driver Approval</DialogTitle>
+                        <DialogDescription>
+                            Are you sure you want to approve <strong>{approvingDriver?.name}</strong>? This will grant them access to the driver application and create a Stripe customer profile.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-100">
+                            <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold">
+                                {approvingDriver?.name?.charAt(0)}
+                            </div>
+                            <div>
+                                <p className="font-semibold text-slate-900">{approvingDriver?.name}</p>
+                                <p className="text-xs text-slate-500">{approvingDriver?.email}</p>
+                            </div>
                         </div>
                     </div>
-                </CardContent>
-            </Card>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={() => setApprovingDriver(null)}>
+                            Cancel
+                        </Button>
+                        <Button type="button" onClick={confirmApprove} disabled={submitting}>
+                            {submitting ? 'Approving...' : 'Confirm Approval'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
-            {/* Driver Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {loading ? (
-                    <div className="col-span-full flex items-center justify-center py-12">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                    </div>
-                ) : filteredDrivers.length === 0 ? (
-                    <div className="col-span-full text-center py-12 text-slate-500">
-                        No drivers found
-                    </div>
-                ) : (
-                    filteredDrivers.map((driver) => (
-                        <Card key={driver.id} className="overflow-hidden">
-                            <CardContent className="p-5">
-                                <div className="flex items-start gap-4">
-                                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white font-semibold text-lg shrink-0">
-                                        {driver.name.charAt(0)}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-start justify-between gap-2">
-                                            <div>
-                                                <h3 className="font-semibold text-slate-900 truncate">
-                                                    {driver.name}
-                                                </h3>
-                                                <p className="text-sm text-slate-500 truncate">
-                                                    {driver.email}
-                                                </p>
+            {/* Filters Toolbar */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <Input
+                        id="driver-search-input"
+                        placeholder="Search by name, email or license..."
+                        className="pl-9 bg-slate-50 border-transparent focus:bg-white focus:border-primary transition-all"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                    />
+                </div>
+                <div className="flex gap-2 p-1 bg-slate-50 rounded-xl border border-slate-100">
+                    {['all', 'ACTIVE', 'PENDING_APPROVAL', 'BLOCKED'].map((status) => (
+                        <button
+                            key={status}
+                            id={`status-filter-${status.toLowerCase()}`}
+                            onClick={() => setStatusFilter(status)}
+                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${statusFilter === status ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            {status === 'all' ? 'All' : status.replace('_', ' ')}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Drivers Data Table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden relative z-0">
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50/80 border-b border-slate-200 text-xs uppercase tracking-wider text-slate-500 font-bold">
+                                <th className="p-4 w-12 text-center">
+                                    <input 
+                                        type="checkbox" 
+                                        className="rounded border-slate-300 text-primary focus:ring-primary w-4 h-4"
+                                        checked={selectedDrivers.length === filteredDrivers.length && filteredDrivers.length > 0}
+                                        onChange={(e) => {
+                                            if (e.target.checked) setSelectedDrivers(filteredDrivers.map(d => d.id));
+                                            else setSelectedDrivers([]);
+                                        }}
+                                    />
+                                </th>
+                                <th className="p-4">Driver Details</th>
+                                <th className="p-4">License Info</th>
+                                <th className="p-4">Compliance</th>
+                                <th className="p-4">Financials</th>
+                                <th className="p-4">Status</th>
+                                <th className="p-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {loading ? (
+                                <tr>
+                                    <td colSpan={7} className="p-8 text-center">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                                    </td>
+                                </tr>
+                            ) : filteredDrivers.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="p-12 text-center text-slate-500">
+                                        <UserX className="w-10 h-10 mx-auto text-slate-300 mb-3" />
+                                        <p className="text-lg font-medium text-slate-600">No drivers found</p>
+                                        <p className="text-sm">Try adjusting your filters or search query.</p>
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredDrivers.map((driver) => (
+                                    <tr key={driver.id} className="hover:bg-slate-50/80 transition-colors group">
+                                        <td className="p-4 text-center">
+                                            <input 
+                                                type="checkbox" 
+                                                className="rounded border-slate-300 text-primary focus:ring-primary w-4 h-4 opacity-50 group-hover:opacity-100 transition-opacity"
+                                                checked={selectedDrivers.includes(driver.id)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) setSelectedDrivers([...selectedDrivers, driver.id]);
+                                                    else setSelectedDrivers(selectedDrivers.filter(id => id !== driver.id));
+                                                }}
+                                            />
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-blue-100 border border-blue-200 flex items-center justify-center text-blue-700 font-bold shrink-0">
+                                                    {driver.name.charAt(0)}
+                                                </div>
+                                                <div>
+                                                    <div className="font-semibold text-slate-900">{driver.name}</div>
+                                                    <div className="text-xs text-slate-500">{driver.email}</div>
+                                                </div>
                                             </div>
+                                        </td>
+                                        <td className="p-4 text-sm font-medium text-slate-700">
+                                            {driver.license_no}
+                                        </td>
+                                        <td className="p-4">
+                                            <Badge className={getStatusColor(driver.vevo_status)}>
+                                                <Shield className="w-3 h-3 mr-1" />
+                                                {driver.vevo_status}
+                                            </Badge>
+                                        </td>
+                                        <td className="p-4">
+                                            <span className={`text-sm font-bold ${parseFloat(driver.balance) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                {formatCurrency(driver.balance)}
+                                            </span>
+                                        </td>
+                                        <td className="p-4">
                                             <Badge className={getStatusColor(driver.status)}>
                                                 {driver.status.replace('_', ' ')}
                                             </Badge>
-                                        </div>
-
-                                        <div className="mt-3 space-y-2 text-sm">
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-500">License:</span>
-                                                <span className="font-medium">{driver.license_no}</span>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-500">VEVO Status:</span>
-                                                <Badge className={getStatusColor(driver.vevo_status)}>
-                                                    <Shield className="w-3 h-3 mr-1" />
-                                                    {driver.vevo_status}
-                                                </Badge>
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-slate-500">Balance:</span>
-                                                <span className={`font-medium ${parseFloat(driver.balance) < 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                    {formatCurrency(driver.balance)}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        {driver.status === 'PENDING_APPROVAL' && (
-                                            <div className="flex gap-2 mt-4">
-                                                <Button
-                                                    size="sm"
-                                                    variant="success"
-                                                    className="flex-1 gap-1"
-                                                    onClick={() => handleApprove(driver.id)}
-                                                    disabled={driver.vevo_status === 'DENIED'}
-                                                >
-                                                    <UserCheck className="w-4 h-4" />
-                                                    Approve
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            {driver.status === 'PENDING_APPROVAL' ? (
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <Button size="sm" variant="success" className="h-8 px-2" onClick={() => handleApprove(driver)} disabled={driver.vevo_status === 'DENIED'}>
+                                                        <Check className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button size="sm" variant="destructive" className="h-8 px-2" onClick={() => handleBlock(driver.id)}>
+                                                        <UserX className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <Button variant="ghost" size="sm" className="text-slate-400 hover:text-primary">
+                                                    View Profile
                                                 </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="destructive"
-                                                    className="flex-1 gap-1"
-                                                    onClick={() => handleBlock(driver.id)}
-                                                >
-                                                    <UserX className="w-4 h-4" />
-                                                    Reject
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))
-                )}
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                {/* Pagination / Footer (Placeholder) */}
+                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 text-xs font-medium text-slate-500 flex justify-between items-center">
+                    <span>Showing {filteredDrivers.length} {filteredDrivers.length === 1 ? 'driver' : 'drivers'}</span>
+                </div>
             </div>
         </div>
     );

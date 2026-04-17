@@ -1,5 +1,5 @@
-import { prisma } from '../index.js';
-import { VehicleStatus } from '@prisma/client';
+import { supabase } from '../_lib/supabase.js';
+import { VehicleStatus } from '../_lib/database.types.js';
 
 export class VehicleService {
     /**
@@ -11,11 +11,13 @@ export class VehicleService {
         issues: string[];
         vehicle: any;
     }> {
-        const vehicle = await prisma.vehicle.findUnique({
-            where: { id: vehicle_id }
-        });
+        const { data: vehicle, error: fetchErr } = await supabase
+            .from('vehicles')
+            .select('*')
+            .eq('id', vehicle_id)
+            .single();
 
-        if (!vehicle) {
+        if (fetchErr || !vehicle) {
             throw new Error('Vehicle not found');
         }
 
@@ -24,34 +26,43 @@ export class VehicleService {
         const issues: string[] = [];
 
         // Check rego expiry
-        if (vehicle.rego_expiry < today) {
+        if (new Date(vehicle.rego_expiry) < today) {
             issues.push('Registration has expired');
         }
 
         // Check CTP (Green Slip) expiry
-        if (vehicle.ctp_expiry < today) {
+        if (new Date(vehicle.ctp_expiry) < today) {
             issues.push('CTP (Green Slip) has expired');
         }
 
         // Check Pink Slip expiry
-        if (vehicle.pink_slip_expiry < today) {
+        if (new Date(vehicle.pink_slip_expiry) < today) {
             issues.push('Pink Slip (Safety Check) has expired');
         }
 
         const isCompliant = issues.length === 0;
 
         // Auto-suspend if not compliant
-        if (!isCompliant && vehicle.status !== VehicleStatus.SUSPENDED) {
-            await prisma.vehicle.update({
-                where: { id: vehicle_id },
-                data: { status: VehicleStatus.SUSPENDED }
-            });
+        if (!isCompliant && vehicle.status !== 'SUSPENDED' as VehicleStatus) {
+            await supabase
+                .from('vehicles')
+                .update({ 
+                    status: 'SUSPENDED' as VehicleStatus,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', vehicle_id);
         }
+
+        const { data: finalVehicle } = await supabase
+            .from('vehicles')
+            .select('*')
+            .eq('id', vehicle_id)
+            .single();
 
         return {
             isCompliant,
             issues,
-            vehicle: await prisma.vehicle.findUnique({ where: { id: vehicle_id } })
+            vehicle: finalVehicle
         };
     }
 
@@ -75,29 +86,20 @@ export class VehicleService {
      * Get all vehicles with compliance status
      */
     static async getAllWithCompliance() {
-        const vehicles = await prisma.vehicle.findMany({
-            include: {
-                rentals: {
-                    where: { status: 'ACTIVE' },
-                    include: { driver: true }
-                }
-            },
-            orderBy: { created_at: 'desc' }
-        });
+        const { data: vehicles, error } = await supabase
+            .from('vehicles')
+            .select('*, rentals(*, driver:drivers(*))')
+            .eq('rentals.status', 'ACTIVE') // Filter relation
+            .order('created_at', { ascending: false });
 
-        return vehicles.map(vehicle => ({
+        if (error) throw error;
+
+        return (vehicles || []).map(vehicle => ({
             ...vehicle,
-            rego_expiry: vehicle.rego_expiry,
-            ctp_expiry: vehicle.ctp_expiry,
-            pink_slip_expiry: vehicle.pink_slip_expiry,
-            weekly_rate: vehicle.weekly_rate,
-            bond_amount: vehicle.bond_amount,
-            created_at: vehicle.created_at,
-            updated_at: vehicle.updated_at,
             compliance: {
-                rego: this.getComplianceStatus(vehicle.rego_expiry),
-                ctp: this.getComplianceStatus(vehicle.ctp_expiry),
-                pinkSlip: this.getComplianceStatus(vehicle.pink_slip_expiry)
+                rego: this.getComplianceStatus(new Date(vehicle.rego_expiry)),
+                ctp: this.getComplianceStatus(new Date(vehicle.ctp_expiry)),
+                pinkSlip: this.getComplianceStatus(new Date(vehicle.pink_slip_expiry))
             },
             current_driver: vehicle.rentals?.[0]?.driver || null
         }));
@@ -123,12 +125,21 @@ export class VehicleService {
         ctp_doc?: string;
         pink_slip_doc?: string;
     }) {
-        return prisma.vehicle.create({
-            data: {
+        const { data: vehicle, error } = await supabase
+            .from('vehicles')
+            .insert({
                 ...data,
-                status: VehicleStatus.DRAFT
-            }
-        });
+                rego_expiry: data.rego_expiry.toISOString(),
+                ctp_expiry: data.ctp_expiry.toISOString(),
+                pink_slip_expiry: data.pink_slip_expiry.toISOString(),
+                status: 'DRAFT' as VehicleStatus,
+                updated_at: new Date().toISOString()
+            })
+            .select()
+            .single();
+
+        if (error) throw error;
+        return vehicle;
     }
 
     /**
@@ -152,34 +163,57 @@ export class VehicleService {
         ctp_doc: string;
         pink_slip_doc: string;
     }>) {
-        const vehicle = await prisma.vehicle.update({
-            where: { id },
-            data
-        });
+        // Formulate update data
+        const updateData: any = { ...data, updated_at: new Date().toISOString() };
+        if (data.rego_expiry) updateData.rego_expiry = data.rego_expiry.toISOString();
+        if (data.ctp_expiry) updateData.ctp_expiry = data.ctp_expiry.toISOString();
+        if (data.pink_slip_expiry) updateData.pink_slip_expiry = data.pink_slip_expiry.toISOString();
+
+        const { error: updateErr } = await supabase
+            .from('vehicles')
+            .update(updateData)
+            .eq('id', id);
+
+        if (updateErr) throw updateErr;
 
         // Re-validate compliance after update
         await this.validateCompliance(id);
 
-        return prisma.vehicle.findUnique({ where: { id } });
+        const { data: vehicle, error: fetchErr } = await supabase
+            .from('vehicles')
+            .select('*')
+            .eq('id', id)
+            .single();
+            
+        if (fetchErr) throw fetchErr;
+        return vehicle;
     }
 
     /**
      * Delete vehicle (only if not rented)
      */
     static async delete(id: string) {
-        const vehicle = await prisma.vehicle.findUnique({
-            where: { id },
-            include: { rentals: { where: { status: 'ACTIVE' } } }
-        });
+        const { data: vehicle, error: fetchErr } = await supabase
+            .from('vehicles')
+            .select('*, rentals(*)')
+            .eq('id', id)
+            .eq('rentals.status', 'ACTIVE')
+            .single();
 
-        if (!vehicle) {
+        if (fetchErr || !vehicle) {
             throw new Error('Vehicle not found');
         }
 
-        if (vehicle.rentals.length > 0) {
+        if ((vehicle.rentals || []).length > 0) {
             throw new Error('Cannot delete vehicle with active rental');
         }
 
-        return prisma.vehicle.delete({ where: { id } });
+        const { error: deleteErr } = await supabase
+            .from('vehicles')
+            .delete()
+            .eq('id', id);
+
+        if (deleteErr) throw deleteErr;
+        return { id, success: true };
     }
 }

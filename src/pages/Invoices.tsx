@@ -88,7 +88,7 @@ export function InvoicesPage() {
                         variant={filter === status ? 'default' : 'outline'}
                         size="sm"
                         onClick={() => setFilter(status)}
-                        className={filter === status ? 'bg-gradient-to-r from-indigo-600 to-purple-600' : ''}
+                        className={filter === status ? 'bg-gradient-to-r from-blue-600 to-blue-700' : ''}
                     >
                         {status === 'all' ? 'All' : status}
                     </Button>

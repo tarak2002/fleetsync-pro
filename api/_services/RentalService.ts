@@ -1,6 +1,5 @@
-import { prisma } from '../index.js';
-import { RentalStatus, VehicleStatus, DriverStatus, InvoiceStatus } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
+import { supabase } from '../_lib/supabase.js';
+import { RentalStatus, VehicleStatus, DriverStatus } from '../_lib/database.types.js';
 
 export class RentalService {
     /**
@@ -15,46 +14,50 @@ export class RentalService {
         start_date?: Date;
     }) {
         // Check vehicle status
-        const vehicle = await prisma.vehicle.findUnique({
-            where: { id: data.vehicle_id }
-        });
+        const { data: vehicle, error: vErr } = await supabase
+            .from('vehicles')
+            .select('status')
+            .eq('id', data.vehicle_id)
+            .single();
 
-        if (!vehicle) {
+        if (vErr || !vehicle) {
             throw new Error('Vehicle not found');
         }
 
-        if (vehicle.status === VehicleStatus.SUSPENDED) {
+        if (vehicle.status === 'SUSPENDED' as VehicleStatus) {
             throw new Error('Cannot assign a suspended vehicle');
         }
 
-        if (vehicle.status === VehicleStatus.RENTED) {
+        if (vehicle.status === 'RENTED' as VehicleStatus) {
             throw new Error('Vehicle is already rented');
         }
 
         // Check driver status
-        const driver = await prisma.driver.findUnique({
-            where: { id: data.driver_id }
-        });
+        const { data: driver, error: dErr } = await supabase
+            .from('drivers')
+            .select('status')
+            .eq('id', data.driver_id)
+            .single();
 
-        if (!driver) {
+        if (dErr || !driver) {
             throw new Error('Driver not found');
         }
 
-        if (driver.status === DriverStatus.BLOCKED) {
+        if (driver.status === 'BLOCKED' as DriverStatus) {
             throw new Error('Cannot assign vehicle to blocked driver');
         }
 
-        if (driver.status !== DriverStatus.ACTIVE) {
+        if (driver.status !== 'ACTIVE' as DriverStatus) {
             throw new Error('Driver must be active to rent a vehicle');
         }
 
         // Check driver doesn't already have an active rental
-        const existingRental = await prisma.rental.findFirst({
-            where: {
-                driver_id: data.driver_id,
-                status: RentalStatus.ACTIVE
-            }
-        });
+        const { data: existingRental } = await supabase
+            .from('rentals')
+            .select('id')
+            .eq('driver_id', data.driver_id)
+            .eq('status', 'ACTIVE' as RentalStatus)
+            .maybeSingle();
 
         if (existingRental) {
             throw new Error('Driver already has an active rental');
@@ -64,33 +67,41 @@ export class RentalService {
         const next_payment_date = new Date(start_date);
         next_payment_date.setDate(next_payment_date.getDate() + 7);
 
-        // Create rental and update vehicle status in a transaction
-        const rental = await prisma.$transaction(async (tx) => {
-            // Create rental
-            const newRental = await tx.rental.create({
-                data: {
-                    driver_id: data.driver_id,
-                    vehicle_id: data.vehicle_id,
-                    start_date,
-                    bond_amount: data.bond_amount,
-                    weekly_rate: data.weekly_rate,
-                    next_payment_date,
-                    status: RentalStatus.ACTIVE
-                },
-                include: {
-                    driver: true,
-                    vehicle: true
-                }
-            });
+        // Supabase JS doesn't support transactions easily on the client.
+        // We will perform operations sequentially for this prototype.
+        
+        // 1. Create rental
+        const { data: rental, error: rentalErr } = await supabase
+            .from('rentals')
+            .insert({
+                driver_id: data.driver_id,
+                vehicle_id: data.vehicle_id,
+                start_date: start_date.toISOString(),
+                bond_amount: data.bond_amount,
+                weekly_rate: data.weekly_rate,
+                next_payment_date: next_payment_date.toISOString(),
+                status: 'ACTIVE' as RentalStatus,
+                updated_at: new Date().toISOString()
+            })
+            .select('*, driver:drivers(*), vehicle:vehicles(*)')
+            .single();
 
-            // Update vehicle status to RENTED
-            await tx.vehicle.update({
-                where: { id: data.vehicle_id },
-                data: { status: VehicleStatus.RENTED }
-            });
+        if (rentalErr) throw rentalErr;
 
-            return newRental;
-        });
+        // 2. Update vehicle status to RENTED
+        const { error: vehicleUpdateErr } = await supabase
+            .from('vehicles')
+            .update({ 
+                status: 'RENTED' as VehicleStatus,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', data.vehicle_id);
+
+        if (vehicleUpdateErr) {
+            // Rollback rental manual deletion if vehicle update fails (simple case)
+            await supabase.from('rentals').delete().eq('id', rental.id);
+            throw vehicleUpdateErr;
+        }
 
         return rental;
     }
@@ -99,56 +110,65 @@ export class RentalService {
      * End a rental
      */
     static async endRental(rental_id: string) {
-        const rental = await prisma.rental.findUnique({
-            where: { id: rental_id }
-        });
+        const { data: rental, error: fetchErr } = await supabase
+            .from('rentals')
+            .select('*')
+            .eq('id', rental_id)
+            .single();
 
-        if (!rental) {
+        if (fetchErr || !rental) {
             throw new Error('Rental not found');
         }
 
-        if (rental.status !== RentalStatus.ACTIVE) {
+        if (rental.status !== 'ACTIVE' as RentalStatus) {
             throw new Error('Rental is not active');
         }
 
-        // End rental and make vehicle available
-        return prisma.$transaction(async (tx) => {
-            const updatedRental = await tx.rental.update({
-                where: { id: rental_id },
-                data: {
-                    status: RentalStatus.COMPLETED,
-                    end_date: new Date()
-                },
-                include: {
-                    driver: true,
-                    vehicle: true
-                }
-            });
+        // 1. End rental
+        const { data: updatedRental, error: rentalErr } = await supabase
+            .from('rentals')
+            .update({
+                status: 'COMPLETED' as RentalStatus,
+                end_date: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', rental_id)
+            .select('*, driver:drivers(*), vehicle:vehicles(*)')
+            .single();
 
-            await tx.vehicle.update({
-                where: { id: rental.vehicle_id },
-                data: { status: VehicleStatus.AVAILABLE }
-            });
+        if (rentalErr) throw rentalErr;
 
-            return updatedRental;
-        });
+        // 2. Make vehicle available
+        await supabase
+            .from('vehicles')
+            .update({ 
+                status: 'AVAILABLE' as VehicleStatus,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', rental.vehicle_id);
+
+        return updatedRental;
     }
 
     /**
      * Get all active rentals
      */
     static async getActiveRentals() {
-        return prisma.rental.findMany({
-            where: { status: RentalStatus.ACTIVE },
-            include: {
-                driver: true,
-                vehicle: true,
-                invoices: {
-                    orderBy: { due_date: 'desc' },
-                    take: 3
-                }
-            }
-        });
+        const { data, error } = await supabase
+            .from('rentals')
+            .select('*, driver:drivers(*), vehicle:vehicles(*), invoices(*)')
+            .eq('status', 'ACTIVE' as RentalStatus)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        
+        // Sorting and taking 3 invoices in-memory since Supabase nested limit is complex
+        return (data || []).map(rental => ({
+            ...rental,
+            invoices: (rental.invoices || [])
+                .sort((a: any, b: any) => new Date(b.due_date).getTime() - new Date(a.due_date).getTime())
+                .slice(0, 3)
+        }));
     }
 
     /**
@@ -159,17 +179,13 @@ export class RentalService {
         const threeDaysFromNow = new Date();
         threeDaysFromNow.setDate(today.getDate() + 3);
 
-        return prisma.rental.findMany({
-            where: {
-                status: RentalStatus.ACTIVE,
-                next_payment_date: {
-                    lte: threeDaysFromNow
-                }
-            },
-            include: {
-                driver: true,
-                vehicle: true
-            }
-        });
+        const { data, error } = await supabase
+            .from('rentals')
+            .select('*, driver:drivers(*), vehicle:vehicles(*)')
+            .eq('status', 'ACTIVE' as RentalStatus)
+            .lte('next_payment_date', threeDaysFromNow.toISOString());
+
+        if (error) throw error;
+        return data;
     }
 }

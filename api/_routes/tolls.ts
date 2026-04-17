@@ -1,14 +1,17 @@
 import { Router } from 'express';
-import { prisma } from '../_lib/prisma.js';
+import { supabase } from '../_lib/supabase.js';
 
 const router = Router();
 
 // Get all unprocessed tolls
 router.get('/unprocessed', async (req, res) => {
     try {
-        const tolls = await prisma.tollCharge.findMany({
-            where: { invoice_id: null }
-        });
+        const { data: tolls, error } = await supabase
+            .from('toll_charges')
+            .select('*')
+            .is('invoice_id', null);
+            
+        if (error) throw error;
         res.json(tolls);
     } catch (error: any) {
         res.status(500).json({ error: error.message });

@@ -31,13 +31,25 @@ export const authMiddleware = async (
             return res.status(401).json({ error: 'Invalid or expired token' });
         }
 
-        // Extract role and other metadata from Supabase user
-        // We'll trust the roles we store in user_metadata or set via Supabase claims
+        // Extract context from database to ensure metadata is always synced
+        const { data: dbUser } = await supabase
+            .from('users')
+            .select('role, drivers(id)')
+            .eq('id', user.id)
+            .single();
+
+        const role = dbUser?.role || user.user_metadata?.role || 'DRIVER';
+        const driverId = Array.isArray(dbUser?.drivers) 
+          ? dbUser.drivers[0]?.id 
+          : (dbUser?.drivers as any)?.id || user.user_metadata?.driverId;
+
+        console.log(`[Auth] Authenticated as ${role} (User: ${user.id}, Driver: ${driverId})`);
+
         req.user = {
             id: user.id,
             email: user.email || '',
-            role: user.user_metadata?.role || 'DRIVER',
-            driverId: user.user_metadata?.driverId
+            role: role,
+            driverId: driverId
         };
         
         next();

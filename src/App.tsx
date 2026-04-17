@@ -3,23 +3,31 @@ import { Provider, useSelector } from 'react-redux';
 import type { RootState } from './store';
 import { store } from './store';
 import { Layout } from './components/layout/Layout';
+import { DriverLayout } from './components/layout/DriverLayout';
 import { Dashboard } from './pages/Dashboard';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { supabase } from './lib/supabase';
 import { setAuthUser } from './store';
 import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
-import { FleetPage } from './pages/Fleet';
-import { DriversPage } from './pages/Drivers';
-import { RentalsPage } from './pages/Rentals';
-import { InvoicesPage } from './pages/Invoices';
-import { FinancePage } from './pages/Finance';
-import { CompliancePage } from './pages/Compliance';
-import { LoginPage } from './pages/Login';
-import { OnboardingPage } from './pages/Onboarding';
-import { DriverOperations } from './pages/DriverOperations';
-import { VehicleSelection } from './pages/VehicleSelection';
-import { LandingPage } from './pages/LandingPage';
+import { lazy, Suspense } from 'react';
+import { LoadingScreen } from './components/common/LoadingScreen';
+
+const FleetPage = lazy(() => import('./pages/Fleet').then(m => ({ default: m.FleetPage })));
+const DriversPage = lazy(() => import('./pages/Drivers').then(m => ({ default: m.DriversPage })));
+const RentalsPage = lazy(() => import('./pages/Rentals').then(m => ({ default: m.RentalsPage })));
+const InvoicesPage = lazy(() => import('./pages/Invoices').then(m => ({ default: m.InvoicesPage })));
+const FinancePage = lazy(() => import('./pages/Finance').then(m => ({ default: m.FinancePage })));
+const CompliancePage = lazy(() => import('./pages/Compliance').then(m => ({ default: m.CompliancePage })));
+const LoginPage = lazy(() => import('./pages/Login').then(m => ({ default: m.LoginPage })));
+const OnboardingPage = lazy(() => import('./pages/Onboarding').then(m => ({ default: m.OnboardingPage })));
+const DriverOperations = lazy(() => import('./pages/DriverOperations').then(m => ({ default: m.DriverOperations })));
+const VehicleSelection = lazy(() => import('./pages/VehicleSelection').then(m => ({ default: m.VehicleSelection })));
+const DriverHistory = lazy(() => import('./pages/DriverHistory').then(m => ({ default: m.DriverHistory })));
+const DriverPayments = lazy(() => import('./pages/DriverPayments').then(m => ({ default: m.DriverPayments })));
+const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ default: m.LandingPage })));
+const BusinessSettings = lazy(() => import('./pages/BusinessSettings').then(m => ({ default: m.BusinessSettings })));
+const LiveTracking = lazy(() => import('./pages/LiveTracking').then(m => ({ default: m.LiveTracking })));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useSelector((state: RootState) => state.auth);
@@ -70,11 +78,12 @@ function AppRoutes() {
   }, [dispatch]);
 
   if (loading) {
-    return <div className="h-screen w-screen flex items-center justify-center">Loading...</div>;
+    return <LoadingScreen message="Checking Authentication..." />;
   }
 
   return (
-    <Routes>
+    <Suspense fallback={<LoadingScreen message="Loading Application..." />}>
+      <Routes>
       <Route path="/" element={
         isAuthenticated ? (
           user?.role === 'ADMIN' ? <Navigate to="/admin" replace /> : <Navigate to="/dashboard/operations" replace />
@@ -84,16 +93,16 @@ function AppRoutes() {
       <Route path="/onboarding/:token" element={<OnboardingPage />} />
       
       {/* Driver specific dashboard routes */}
-      <Route path="/dashboard/operations" element={
+      <Route path="/dashboard" element={
         <ProtectedRoute>
-          <DriverOperations />
+          <DriverLayout />
         </ProtectedRoute>
-      } />
-      <Route path="/dashboard/select-vehicle" element={
-        <ProtectedRoute>
-          <VehicleSelection />
-        </ProtectedRoute>
-      } />
+      }>
+        <Route path="operations" element={<DriverOperations />} />
+        <Route path="select-vehicle" element={<VehicleSelection />} />
+        <Route path="history" element={<DriverHistory />} />
+        <Route path="payments" element={<DriverPayments />} />
+      </Route>
 
       {/* Admin specific dashboard routes */}
       <Route path="/admin" element={
@@ -105,14 +114,17 @@ function AppRoutes() {
         <Route path="fleet" element={<FleetPage />} />
         <Route path="drivers" element={<DriversPage />} />
         <Route path="rentals" element={<RentalsPage />} />
+        <Route path="tracking" element={<LiveTracking />} />
         <Route path="invoices" element={<InvoicesPage />} />
         <Route path="finance" element={<FinancePage />} />
         <Route path="compliance" element={<CompliancePage />} />
+        <Route path="businesses" element={<BusinessSettings />} />
       </Route>
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

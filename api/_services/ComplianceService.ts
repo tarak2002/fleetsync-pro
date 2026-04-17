@@ -1,5 +1,4 @@
-import { prisma } from '../index.js';
-import { VehicleStatus, AlertType } from '@prisma/client';
+import { supabase } from '../_lib/supabase.js';
 
 export class ComplianceService {
     /**
@@ -11,80 +10,73 @@ export class ComplianceService {
         today.setHours(0, 0, 0, 0);
 
         // Get all active vehicles (AVAILABLE or RENTED)
-        const vehicles = await prisma.vehicle.findMany({
-            where: {
-                status: {
-                    in: [VehicleStatus.AVAILABLE, VehicleStatus.RENTED]
-                }
-            }
-        });
+        const { data: vehicles, error: vError } = await supabase
+            .from('vehicles')
+            .select('*')
+            .in('status', ['AVAILABLE', 'RENTED']);
+
+        if (vError) throw vError;
 
         const results: any[] = [];
 
-        for (const vehicle of vehicles) {
-            const issues: { type: AlertType; message: string }[] = [];
+        for (const vehicle of vehicles || []) {
+            const issues: { type: string; message: string }[] = [];
 
             // Check rego expiry
             const regoExpiry = new Date(vehicle.rego_expiry);
-            regoExpiry.setHours(0, 0, 0, 0);
             if (regoExpiry < today) {
                 issues.push({
-                    type: AlertType.REGO_EXPIRY,
-                    message: `Registration expired on ${vehicle.rego_expiry.toLocaleDateString()}`
+                    type: 'REGO_EXPIRY',
+                    message: `Registration expired on ${new Date(vehicle.rego_expiry).toLocaleDateString()}`
                 });
             }
 
             // Check CTP expiry
             const ctpExpiry = new Date(vehicle.ctp_expiry);
-            ctpExpiry.setHours(0, 0, 0, 0);
             if (ctpExpiry < today) {
                 issues.push({
-                    type: AlertType.CTP_EXPIRY,
-                    message: `CTP (Green Slip) expired on ${vehicle.ctp_expiry.toLocaleDateString()}`
+                    type: 'CTP_EXPIRY',
+                    message: `CTP (Green Slip) expired on ${new Date(vehicle.ctp_expiry).toLocaleDateString()}`
                 });
             }
 
             // Check Pink Slip expiry
             const pinkSlipExpiry = new Date(vehicle.pink_slip_expiry);
-            pinkSlipExpiry.setHours(0, 0, 0, 0);
             if (pinkSlipExpiry < today) {
                 issues.push({
-                    type: AlertType.PINK_SLIP_EXPIRY,
-                    message: `Pink Slip (Safety Check) expired on ${vehicle.pink_slip_expiry.toLocaleDateString()}`
+                    type: 'PINK_SLIP_EXPIRY',
+                    message: `Pink Slip (Safety Check) expired on ${new Date(vehicle.pink_slip_expiry).toLocaleDateString()}`
                 });
             }
 
             if (issues.length > 0) {
-                // Suspend vehicle and create alerts atomically
-                await prisma.$transaction(async (tx) => {
-                    // Suspend vehicle
-                    await tx.vehicle.update({
-                        where: { id: vehicle.id },
-                        data: { status: VehicleStatus.SUSPENDED }
-                    });
+                // Suspend vehicle
+                await supabase
+                    .from('vehicles')
+                    .update({ status: 'SUSPENDED' })
+                    .eq('id', vehicle.id);
 
-                    // Create alerts for each issue
-                    for (const issue of issues) {
-                        // Check if alert already exists
-                        const existingAlert = await tx.alert.findFirst({
-                            where: {
-                                vehicle_id: vehicle.id,
+                // Create alerts for each issue
+                for (const issue of issues) {
+                    // Check if alert already exists
+                    const { data: existingAlert } = await supabase
+                        .from('alerts')
+                        .select('id')
+                        .eq('vehicle_id', vehicle.id)
+                        .eq('type', issue.type)
+                        .eq('resolved', false)
+                        .single();
+
+                    if (!existingAlert) {
+                        await supabase
+                            .from('alerts')
+                            .insert({
                                 type: issue.type,
-                                resolved: false
-                            }
-                        });
-
-                        if (!existingAlert) {
-                            await tx.alert.create({
-                                data: {
-                                    type: issue.type,
-                                    message: `${vehicle.plate}: ${issue.message}`,
-                                    vehicle_id: vehicle.id
-                                }
+                                message: `${vehicle.plate}: ${issue.message}`,
+                                vehicle_id: vehicle.id
                             });
-                        }
                     }
-                });
+                }
 
                 results.push({
                     vehicleId: vehicle.id,
@@ -96,7 +88,7 @@ export class ComplianceService {
         }
 
         return {
-            checkedCount: vehicles.length,
+            checkedCount: vehicles?.length || 0,
             suspendedCount: results.length,
             details: results
         };
@@ -106,24 +98,32 @@ export class ComplianceService {
      * Get all unresolved alerts
      */
     static async getUnresolvedAlerts() {
-        return prisma.alert.findMany({
-            where: { resolved: false },
-            include: { vehicle: true },
-            orderBy: { created_at: 'desc' }
-        });
+        const { data, error } = await supabase
+            .from('alerts')
+            .select('*, vehicle:vehicles(plate)')
+            .eq('resolved', false)
+            .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        return data;
     }
 
     /**
      * Resolve an alert
      */
     static async resolveAlert(alertId: string) {
-        return prisma.alert.update({
-            where: { id: alertId },
-            data: {
+        const { data, error } = await supabase
+            .from('alerts')
+            .update({
                 resolved: true,
-                resolved_at: new Date()
-            }
-        });
+                resolved_at: new Date().toISOString()
+            })
+            .eq('id', alertId)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
     }
 
     /**
@@ -134,27 +134,24 @@ export class ComplianceService {
         const thirtyDaysFromNow = new Date();
         thirtyDaysFromNow.setDate(today.getDate() + 30);
 
-        const vehicles = await prisma.vehicle.findMany({
-            where: {
-                status: { not: VehicleStatus.SUSPENDED },
-                OR: [
-                    { rego_expiry: { lte: thirtyDaysFromNow } },
-                    { ctp_expiry: { lte: thirtyDaysFromNow } },
-                    { pink_slip_expiry: { lte: thirtyDaysFromNow } }
-                ]
-            }
-        });
+        const { data: vehicles, error } = await supabase
+            .from('vehicles')
+            .select('*')
+            .neq('status', 'SUSPENDED')
+            .or(`rego_expiry.lte.${thirtyDaysFromNow.toISOString()},ctp_expiry.lte.${thirtyDaysFromNow.toISOString()},pink_slip_expiry.lte.${thirtyDaysFromNow.toISOString()}`);
 
-        return vehicles.map(v => {
+        if (error) throw error;
+
+        return (vehicles || []).map(v => {
             const expiries: string[] = [];
-            if (v.rego_expiry <= thirtyDaysFromNow) {
-                expiries.push(`Rego: ${v.rego_expiry.toLocaleDateString()}`);
+            if (new Date(v.rego_expiry) <= thirtyDaysFromNow) {
+                expiries.push(`Rego: ${new Date(v.rego_expiry).toLocaleDateString()}`);
             }
-            if (v.ctp_expiry <= thirtyDaysFromNow) {
-                expiries.push(`CTP: ${v.ctp_expiry.toLocaleDateString()}`);
+            if (new Date(v.ctp_expiry) <= thirtyDaysFromNow) {
+                expiries.push(`CTP: ${new Date(v.ctp_expiry).toLocaleDateString()}`);
             }
-            if (v.pink_slip_expiry <= thirtyDaysFromNow) {
-                expiries.push(`Pink Slip: ${v.pink_slip_expiry.toLocaleDateString()}`);
+            if (new Date(v.pink_slip_expiry) <= thirtyDaysFromNow) {
+                expiries.push(`Pink Slip: ${new Date(v.pink_slip_expiry).toLocaleDateString()}`);
             }
             return {
                 vehicleId: v.id,

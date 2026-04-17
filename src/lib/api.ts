@@ -139,3 +139,22 @@ export const driverDashboardApi = {
         api.post('/api/driver/dashboard/accident-report', data),
 };
 
+export const businessApi = {
+    getAll: () => api.get('/api/businesses'),
+    getById: (id: string) => api.get(`/api/businesses/${id}`),
+    create: (data: { name?: string; abn?: string; address?: string; phone?: string; email?: string }) =>
+        api.post('/api/businesses', data),
+    update: (id: string, data: Partial<{ name: string; abn: string; address: string; phone: string; email: string; is_active: boolean }>) =>
+        api.patch(`/api/businesses/${id}`, data),
+    delete: (id: string) => api.delete(`/api/businesses/${id}`),
+    getVehicleDocs: (vehicleId: string) => api.get(`/api/businesses/vehicle-docs/${vehicleId}`),
+    uploadVehicleDoc: (vehicleId: string, formData: FormData) =>
+        api.post(`/api/businesses/vehicle-docs/${vehicleId}/upload`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        }),
+    deleteVehicleDoc: (vehicleId: string, docId: string) =>
+        api.delete(`/api/businesses/vehicle-docs/${vehicleId}/${docId}`),
+    getDocDownloadUrl: (vehicleId: string, docId: string) =>
+        api.get(`/api/businesses/vehicle-docs/${vehicleId}/${docId}/download`),
+    listVehicleDocs: (vehicleId: string) => api.get(`/api/documents/list/${vehicleId}`),
+};

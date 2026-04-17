@@ -93,21 +93,21 @@ export function OnboardingPage() {
 
     if (loading && step === 'validate') {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent" />
+            <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent" />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 flex items-center justify-center p-4 relative overflow-hidden">
             <div className="w-full max-w-lg relative z-10">
                 {/* Logo Header */}
                 <div className="text-center mb-8">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-indigo-200">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-blue-200">
                         <Car className="w-8 h-8 text-white" />
                     </div>
-                    <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">FleetSync Pro</h1>
+                    <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent">FleetSync Pro</h1>
                     <p className="text-slate-500">Driver Onboarding</p>
                 </div>
 
@@ -117,8 +117,8 @@ export function OnboardingPage() {
                         {['Details', 'Verification', 'Complete'].map((label, i) => (
                             <div key={label} className="flex items-center">
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
-                                    i === 0 && step === 'form' ? 'bg-indigo-600 text-white shadow-md' :
-                                    i === 1 && step === 'verify' ? 'bg-indigo-600 text-white shadow-md' :
+                                    i === 0 && step === 'form' ? 'bg-blue-600 text-white shadow-md' :
+                                    i === 1 && step === 'verify' ? 'bg-blue-600 text-white shadow-md' :
                                     i === 2 && step === 'complete' ? 'bg-emerald-500 text-white shadow-md' :
                                     'bg-slate-100 text-slate-400 border border-slate-200'
                                 }`}>
@@ -130,9 +130,9 @@ export function OnboardingPage() {
                     </div>
                 )}
 
-                <Card className="animate-fade-in border border-indigo-100 shadow-xl shadow-indigo-100/50 bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden">
+                <Card className="animate-fade-in border border-blue-100 shadow-xl shadow-blue-100/50 bg-white/90 backdrop-blur-xl rounded-2xl overflow-hidden">
                     {/* Top gradient bar */}
-                    <div className="h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+                    <div className="h-1.5 bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700" />
                     {step === 'error' && (
                         <>
                             <CardHeader className="text-center">

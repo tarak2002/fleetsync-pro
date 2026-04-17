@@ -34,14 +34,20 @@ export function CompliancePage() {
     const loadData = async () => {
         setLoading(true);
         try {
+            console.log('[Compliance] Fetching alerts and expiries...');
             const [alertsRes, expiriesRes] = await Promise.all([
                 complianceApi.getAlerts(),
                 complianceApi.getUpcomingExpiries()
             ]);
+            console.log('[Compliance] Alerts Response:', alertsRes.status, alertsRes.data);
+            console.log('[Compliance] Expiries Response:', expiriesRes.status, expiriesRes.data);
             setAlerts(alertsRes.data);
             setExpiries(expiriesRes.data);
-        } catch (err) {
-            console.error(err);
+        } catch (err: any) {
+            console.error('[Compliance] Failed to fetch data:', err.message);
+            if (err.response) {
+                console.error('[Compliance] Server Error Response:', err.response.status, err.response.data);
+            }
         } finally {
             setLoading(false);
         }
@@ -81,7 +87,7 @@ export function CompliancePage() {
                     <h1 className="text-2xl font-bold text-slate-800">Compliance Watchdog</h1>
                     <p className="text-slate-500">NSW vehicle compliance tracking</p>
                 </div>
-                <Button onClick={runCheck} disabled={checking} className="gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-lg shadow-indigo-200">
+                <Button onClick={runCheck} disabled={checking} className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-200">
                     <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} />
                     Run Compliance Check
                 </Button>
@@ -114,7 +120,7 @@ export function CompliancePage() {
                     <CardContent>
                         {loading ? (
                             <div className="flex justify-center py-8">
-                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
+                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                             </div>
                         ) : alerts.length === 0 ? (
                             <div className="text-center py-8 text-slate-500">

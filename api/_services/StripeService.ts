@@ -1,12 +1,12 @@
 import Stripe from 'stripe';
-import { prisma } from '../index.js';
+import { supabase } from '../_lib/supabase.js';
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY || 'sk_test_mock';
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_mock';
 
-// Initialize the Stripe client. Only use a live key if intentionally skipping the mock locally.
+// Initialize the Stripe client.
 export const stripe = new Stripe(stripeSecretKey, {
-    apiVersion: '2026-01-28.clover', // Always lock to a specific API version
+    apiVersion: '2026-01-28.clover' as any, // Cast as any due to version mismatch in local types vs real API
     appInfo: {
         name: 'FleetSync Pro',
         version: '1.0.0'
@@ -21,10 +21,12 @@ export class StripeService {
         try {
             console.log(`[Stripe] Creating customer for ${email}`);
 
-            // Check if we already have the customer logic on our end to avoid duplicates
-            const existingDriver = await prisma.driver.findUnique({
-                where: { id: driverId }
-            });
+            // Check if we already have the customer ID in Supabase
+            const { data: existingDriver, error: fetchErr } = await supabase
+                .from('drivers')
+                .select('stripe_customer_id')
+                .eq('id', driverId)
+                .single();
 
             if (existingDriver?.stripe_customer_id) {
                 return existingDriver.stripe_customer_id;
@@ -39,10 +41,13 @@ export class StripeService {
             });
 
             // Update driver in DB with Stripe Customer ID
-            await prisma.driver.update({
-                where: { id: driverId },
-                data: { stripe_customer_id: customer.id }
-            });
+            await supabase
+                .from('drivers')
+                .update({ 
+                    stripe_customer_id: customer.id,
+                    updated_at: new Date().toISOString() 
+                })
+                .eq('id', driverId);
 
             return customer.id;
         } catch (error) {
@@ -90,15 +95,17 @@ export class StripeService {
             });
 
             // Update Database with the intention to track
-            await prisma.invoice.update({
-                where: { id: invoiceId },
-                data: { stripe_payment_intent_id: paymentIntent.id }
-            });
+            await supabase
+                .from('invoices')
+                .update({ 
+                    stripe_payment_intent_id: paymentIntent.id,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', invoiceId);
 
             return paymentIntent;
         } catch (error: any) {
             console.error('[Stripe] Failed to charge invoice:', error.message);
-            // Catch card declined errors and handle gracefully by leaving DB status as PENDING or sending an alert
             throw new Error(`Failed to process charge: ${error.message}`);
         }
     }
@@ -122,13 +129,14 @@ export class StripeService {
                     const invoiceId = paymentIntent.metadata.invoiceId;
 
                     if (invoiceId) {
-                        await prisma.invoice.update({
-                            where: { id: invoiceId },
-                            data: {
+                        await supabase
+                            .from('invoices')
+                            .update({
                                 status: 'PAID',
-                                paid_at: new Date()
-                            }
-                        });
+                                paid_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', invoiceId);
                         console.log(`[Stripe Webhook] Invoice ${invoiceId} marked as PAID`);
                     }
                     break;
@@ -136,21 +144,21 @@ export class StripeService {
                 case 'payment_intent.payment_failed': {
                     const paymentIntent = event.data.object as Stripe.PaymentIntent;
                     console.log(`[Stripe Webhook] Payment failed for Intent: ${paymentIntent.id}`);
-                    // Optionally generate an 'Alert' for the admin
-                    // Example: AlertService.createAlert(...)
                     break;
                 }
                 case 'setup_intent.succeeded': {
-                    // Update the DB to record the default payment method if a driver saves a card
                     const setupIntent = event.data.object as Stripe.SetupIntent;
                     const customerId = setupIntent.customer as string;
                     const paymentMethodId = setupIntent.payment_method as string;
 
                     if (customerId && paymentMethodId) {
-                        await prisma.driver.updateMany({
-                            where: { stripe_customer_id: customerId },
-                            data: { stripe_payment_method_id: paymentMethodId }
-                        });
+                        await supabase
+                            .from('drivers')
+                            .update({ 
+                                stripe_payment_method_id: paymentMethodId,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('stripe_customer_id', customerId);
                         console.log(`[Stripe Webhook] Default payment method updated for Customer ${customerId}`);
                     }
                     break;

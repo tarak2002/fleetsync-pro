@@ -1,86 +1,74 @@
 import { Router } from 'express';
-import { prisma } from '../_lib/prisma.js';
+import { supabase } from '../_lib/supabase.js';
 
 const router = Router();
 
-// Dashboard Stats
+// Dashboard analytics
 router.get('/dashboard', async (req, res) => {
-    try {
-        const [
-            totalVehicles,
-            vehicleStatuses,
-            totalDrivers,
-            driverStatuses,
-            activeRentals,
-            pendingInvoices,
-            overdueInvoices,
-            totalAlerts
-        ] = await Promise.all([
-            prisma.vehicle.count(),
-            prisma.vehicle.groupBy({ by: ['status'], _count: true }),
-            prisma.driver.count(),
-            prisma.driver.groupBy({ by: ['status'], _count: true }),
-            prisma.rental.count({ where: { status: 'ACTIVE' } }),
-            prisma.invoice.aggregate({
-                where: { status: 'PENDING' },
-                _count: true,
-                _sum: { amount: true }
-            }),
-            prisma.invoice.aggregate({
-                where: { status: 'OVERDUE' },
-                _count: true,
-                _sum: { amount: true }
-            }),
-            prisma.alert.count({ where: { resolved: false } })
-        ]);
+  try {
+    const [
+      { data: vehicles },
+      { data: drivers },
+      { data: rentals },
+      { data: invoices },
+      { data: alerts },
+    ] = await Promise.all([
+      supabase.from('vehicles').select('status'),
+      supabase.from('drivers').select('status'),
+      supabase.from('rentals').select('status'),
+      supabase.from('invoices').select('status, amount'),
+      supabase.from('alerts').select('id').eq('resolved', false),
+    ]);
 
-        const vehicleByStatus = vehicleStatuses.reduce((acc, curr) => ({
-            ...acc, [curr.status]: curr._count
-        }), {});
+    const vehicleByStatus = (vehicles || []).reduce((acc: Record<string, number>, v) => {
+      acc[v.status] = (acc[v.status] || 0) + 1;
+      return acc;
+    }, {});
 
-        const driverByStatus = driverStatuses.reduce((acc, curr) => ({
-            ...acc, [curr.status]: curr._count
-        }), {});
+    const driverByStatus = (drivers || []).reduce((acc: Record<string, number>, d) => {
+      acc[d.status] = (acc[d.status] || 0) + 1;
+      return acc;
+    }, {});
 
-        res.json({
-            vehicles: {
-                total: totalVehicles,
-                byStatus: vehicleByStatus
-            },
-            drivers: {
-                total: totalDrivers,
-                byStatus: driverByStatus
-            },
-            rentals: {
-                active: activeRentals
-            },
-            invoices: {
-                pending: {
-                    count: pendingInvoices._count,
-                    total: pendingInvoices._sum.amount || 0
-                },
-                overdue: {
-                    count: overdueInvoices._count,
-                    total: overdueInvoices._sum.amount || 0
-                }
-            },
-            alerts: totalAlerts
-        });
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
-    }
+    const pendingInvoices = (invoices || []).filter(i => i.status === 'PENDING');
+    const overdueInvoices = (invoices || []).filter(i => i.status === 'OVERDUE');
+
+    res.json({
+      vehicles: { total: (vehicles || []).length, byStatus: vehicleByStatus },
+      drivers: { total: (drivers || []).length, byStatus: driverByStatus },
+      rentals: { active: (rentals || []).filter(r => r.status === 'ACTIVE').length },
+      invoices: {
+        pending: {
+          count: pendingInvoices.length,
+          total: pendingInvoices.reduce((s, i) => s + Number(i.amount), 0),
+        },
+        overdue: {
+          count: overdueInvoices.length,
+          total: overdueInvoices.reduce((s, i) => s + Number(i.amount), 0),
+        },
+      },
+      alerts: (alerts || []).length,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
+// Rental breakdown by status
 router.get('/rental-breakdown', async (req, res) => {
-    try {
-        const breakdown = await prisma.rental.groupBy({
-            by: ['status'],
-            _count: true
-        });
-        res.json(breakdown.map(b => ({ status: b.status, count: b._count })));
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
-    }
+  try {
+    const { data, error } = await supabase.from('rentals').select('status');
+    if (error) throw error;
+
+    const breakdown = (data || []).reduce((acc: Record<string, number>, r) => {
+      acc[r.status] = (acc[r.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    res.json(Object.entries(breakdown).map(([status, count]) => ({ status, count })));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 export default router;

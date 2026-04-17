@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { stripe } from '../_lib/stripe.js';
-import { prisma } from '../_lib/prisma.js';
+import { supabase } from '../_lib/supabase.js';
 import express from 'express';
 
 const router = Router();
@@ -27,14 +27,14 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
                 const { driverId, rentalId, type } = session.metadata;
 
                 if (type === 'BOND_PAYMENT') {
-                    // Update driver balance or mark rental as active
-                    await prisma.rental.update({
-                        where: { id: rentalId },
-                        data: {
-                            status: 'ACTIVE',
-                            // Add other updates as needed
-                        }
-                    });
+                    // Update rental as active
+                    await supabase
+                        .from('rentals')
+                        .update({ 
+                            status: 'ACTIVE', 
+                            updated_at: new Date().toISOString() 
+                        })
+                        .eq('id', rentalId);
                 }
                 break;
             }
@@ -45,23 +45,33 @@ router.post('/', express.raw({ type: 'application/json' }), async (req, res) => 
                 const stripeCustomerId = invoice.customer;
                 
                 // Find driver associated with this customer
-                const driver = await prisma.driver.findUnique({
-                    where: { stripe_customer_id: stripeCustomerId }
-                });
+                const { data: driver } = await supabase
+                    .from('drivers')
+                    .select('id')
+                    .eq('stripe_customer_id', stripeCustomerId)
+                    .single();
 
                 if (driver) {
-                    // Create invoice record or update existing
-                    // Example: update the most recent pending invoice
-                    await prisma.invoice.updateMany({
-                        where: {
-                            rental: { driver_id: driver.id },
-                            status: 'PENDING'
-                        },
-                        data: {
-                            status: 'PAID',
-                            paid_at: new Date()
-                        }
-                    });
+                    // Find rentals for this driver to get invoice IDs
+                    const { data: rentals } = await supabase
+                        .from('rentals')
+                        .select('id')
+                        .eq('driver_id', driver.id);
+                    
+                    const rentalIds = (rentals || []).map(r => r.id);
+
+                    if (rentalIds.length) {
+                        // Mark most recent pending invoices as paid for these rentals
+                        await supabase
+                            .from('invoices')
+                            .update({ 
+                                status: 'PAID', 
+                                paid_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            })
+                            .in('rental_id', rentalIds)
+                            .eq('status', 'PENDING');
+                    }
                 }
                 break;
             }

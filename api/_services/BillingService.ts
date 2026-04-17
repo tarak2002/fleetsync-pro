@@ -1,5 +1,5 @@
-import { prisma } from '../index.js';
-import { InvoiceStatus } from '@prisma/client';
+import { supabase } from '../_lib/supabase.js';
+import { InvoiceStatus } from '../_lib/database.types.js';
 import { RentalService } from './RentalService.js';
 
 export class BillingService {
@@ -12,12 +12,13 @@ export class BillingService {
         fines?: number;
         credits?: number;
     }) {
-        const rental = await prisma.rental.findUnique({
-            where: { id: rental_id },
-            include: { driver: true }
-        });
+        const { data: rental, error: fetchErr } = await supabase
+            .from('rentals')
+            .select('*, driver:drivers(*)')
+            .eq('id', rental_id)
+            .single();
 
-        if (!rental) {
+        if (fetchErr || !rental) {
             throw new Error('Rental not found');
         }
 
@@ -33,33 +34,36 @@ export class BillingService {
         due_date.setHours(0, 0, 0, 0); // Normalize to start of day
         due_date.setDate(due_date.getDate() + 7);
 
-        const invoice = await prisma.invoice.create({
-            data: {
+        const { data: invoice, error: invErr } = await supabase
+            .from('invoices')
+            .insert({
                 rental_id: rental_id,
                 weekly_rate,
                 tolls,
                 fines,
                 credits,
                 amount,
-                due_date,
-                status: InvoiceStatus.PENDING
-            },
-            include: {
-                rental: {
-                    include: { driver: true, vehicle: true }
-                }
-            }
-        });
+                due_date: due_date.toISOString(),
+                status: 'PENDING' as InvoiceStatus,
+                updated_at: new Date().toISOString()
+            })
+            .select('*, rental:rentals(*, driver:drivers(*), vehicle:vehicles(*))')
+            .single();
+
+        if (invErr) throw invErr;
 
         // Update next payment date on rental (normalize to midnight)
         const next_payment_date = new Date(rental.next_payment_date);
         next_payment_date.setDate(next_payment_date.getDate() + 7);
         next_payment_date.setHours(0, 0, 0, 0);
 
-        await prisma.rental.update({
-            where: { id: rental_id },
-            data: { next_payment_date }
-        });
+        await supabase
+            .from('rentals')
+            .update({ 
+                next_payment_date: next_payment_date.toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', rental_id);
 
         return invoice;
     }
@@ -75,14 +79,12 @@ export class BillingService {
         for (const rental of rentals) {
             try {
                 // Check if invoice already exists for this period
-                const existingInvoice = await prisma.invoice.findFirst({
-                    where: {
-                        rental_id: rental.id,
-                        due_date: {
-                            gte: rental.next_payment_date
-                        }
-                    }
-                });
+                const { data: existingInvoice } = await supabase
+                    .from('invoices')
+                    .select('id')
+                    .eq('rental_id', rental.id)
+                    .gte('due_date', rental.next_payment_date)
+                    .maybeSingle();
 
                 if (!existingInvoice) {
                     const invoice = await this.generateInvoice(rental.id);
@@ -115,27 +117,46 @@ export class BillingService {
      * Mark invoice as paid
      */
     static async markAsPaid(invoice_id: string) {
-        const invoice = await prisma.invoice.update({
-            where: { id: invoice_id },
-            data: {
-                status: InvoiceStatus.PAID,
-                paid_at: new Date()
-            },
-            include: {
-                rental: {
-                    include: { driver: true }
-                }
-            }
-        });
+        const { data: currentInvoice, error: fetchErr } = await supabase
+            .from('invoices')
+            .select('*, rental:rentals(driver_id)')
+            .eq('id', invoice_id)
+            .single();
+            
+        if (fetchErr || !currentInvoice) throw new Error('Invoice not found');
+
+        const { data: invoice, error: updateErr } = await supabase
+            .from('invoices')
+            .update({
+                status: 'PAID' as InvoiceStatus,
+                paid_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', invoice_id)
+            .select('*, rental:rentals(*, driver:drivers(*))')
+            .single();
+
+        if (updateErr) throw updateErr;
 
         // Adjust driver balance
         const amount = Number(invoice.amount);
-        await prisma.driver.update({
-            where: { id: invoice.rental.driver_id },
-            data: {
-                balance: { decrement: amount }
-            }
-        });
+        
+        // Fetch current balance
+        const { data: driver } = await supabase
+            .from('drivers')
+            .select('balance')
+            .eq('id', invoice.rental.driver_id)
+            .single();
+            
+        if (driver) {
+            await supabase
+                .from('drivers')
+                .update({ 
+                    balance: Number(driver.balance) - amount,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id', invoice.rental.driver_id);
+        }
 
         return invoice;
     }
@@ -147,15 +168,18 @@ export class BillingService {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
-        const overdueInvoices = await prisma.invoice.updateMany({
-            where: {
-                status: InvoiceStatus.PENDING,
-                due_date: { lt: today }
-            },
-            data: { status: InvoiceStatus.OVERDUE }
-        });
+        const { data, error } = await supabase
+            .from('invoices')
+            .update({ 
+                status: 'OVERDUE' as InvoiceStatus,
+                updated_at: new Date().toISOString()
+            })
+            .eq('status', 'PENDING' as InvoiceStatus)
+            .lt('due_date', today.toISOString())
+            .select();
 
-        return overdueInvoices;
+        if (error) throw error;
+        return data;
     }
 
     /**
@@ -166,22 +190,25 @@ export class BillingService {
         rental_id?: string;
         driver_id?: string;
     }) {
-        const where: any = {};
+        let query = supabase
+            .from('invoices')
+            .select('*, rental:rentals(*, driver:drivers(*), vehicle:vehicles(*))');
 
-        if (filters?.status) where.status = filters.status;
-        if (filters?.rental_id) where.rental_id = filters.rental_id;
+        if (filters?.status) query = query.eq('status', filters.status);
+        if (filters?.rental_id) query = query.eq('rental_id', filters.rental_id);
+        
         if (filters?.driver_id) {
-            where.rental = { driver_id: filters.driver_id };
+            // Two-step lookup since Supabase doesn't support nested where on relations well
+            const { data: rentals } = await supabase
+                .from('rentals')
+                .select('id')
+                .eq('driver_id', filters.driver_id);
+            const ids = (rentals || []).map(r => r.id);
+            query = query.in('rental_id', ids.length ? ids : ['__none__']);
         }
 
-        return prisma.invoice.findMany({
-            where,
-            include: {
-                rental: {
-                    include: { driver: true, vehicle: true }
-                }
-            },
-            orderBy: { due_date: 'desc' }
-        });
+        const { data, error } = await query.order('due_date', { ascending: false });
+        if (error) throw error;
+        return data;
     }
 }
