@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Car, User, ArrowRight, ShieldCheck, Mail, Lock } from 'lucide-react';
+import { Car, User, ArrowRight, ShieldCheck, Mail, Lock, Sparkles } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { supabase } from '../lib/supabase';
@@ -35,7 +35,6 @@ export function SignupPage() {
                 email,
                 password,
                 options: {
-                    emailConfirmTo: email,
                     data: {
                         full_name: name,
                         role: 'ADMIN'

@@ -34,20 +34,38 @@ export const authMiddleware = async (
         }
 
         // Extract context from database to ensure metadata is always synced
-        const { data: dbUser } = await supabase
+        const { data: dbUser, error: dbError } = await supabase
             .from('users')
             .select('role, business_id, drivers(id, status)')
             .eq('id', user.id)
             .single();
 
-        const role = dbUser?.role || user.user_metadata?.role || 'DRIVER';
-        const driverId = Array.isArray(dbUser?.drivers) 
-          ? dbUser.drivers[0]?.id 
-          : (dbUser?.drivers as any)?.id || user.user_metadata?.driverId;
+        if (dbError && dbError.code !== 'PGRST116') {
+            // PGRST116 = no rows returned, which is handled below
+            throw new Error(`Database query failed: ${dbError.message}`);
+        }
 
-        const driverStatus = Array.isArray(dbUser?.drivers)
-          ? dbUser.drivers[0]?.status
-          : (dbUser?.drivers as any)?.status;
+        const role = dbUser?.role || user.user_metadata?.role || 'DRIVER';
+
+        // Safely extract driver info regardless of whether it's an object or array
+        const drivers = dbUser?.drivers;
+        let driverId: string | undefined;
+        let driverStatus: string | undefined;
+
+        if (drivers) {
+            if (Array.isArray(drivers) && drivers.length > 0) {
+                driverId = drivers[0]?.id;
+                driverStatus = drivers[0]?.status;
+            } else if (typeof drivers === 'object' && !Array.isArray(drivers)) {
+                driverId = (drivers as any).id;
+                driverStatus = (drivers as any).status;
+            }
+        }
+
+        // Fallback to user metadata
+        if (!driverId) {
+            driverId = user.user_metadata?.driverId;
+        }
 
         console.log(`[Auth] Authenticated as ${role} (User: ${user.id}, Driver: ${driverId}, Business: ${dbUser?.business_id || 'NONE'})`);
 

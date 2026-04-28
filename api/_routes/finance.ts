@@ -81,12 +81,16 @@ router.get('/insurance', adminOnly, async (req: AuthRequest, res) => {
         const insuranceData = (vehicles || []).map(v => {
             const activeRental = v.rentals?.find((r: any) => r.status === 'ACTIVE');
             const annualCost = Number(v.insurance_cost || 0);
+            const driver = activeRental?.driver;
+            const driverName = typeof driver === 'object' && driver !== null
+                ? driver.name
+                : Array.isArray(driver) ? driver[0]?.name : '—';
             return {
                 vehicle_id: v.id,
                 plate: v.plate,
                 make: v.make,
                 model: v.model,
-                current_driver: (activeRental?.driver as any)?.[0]?.name || '—',
+                current_driver: driverName || '—',
                 insurance_cost_annual: annualCost,
                 insurance_cost_daily: annualCost / 365
             };

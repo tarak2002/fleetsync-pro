@@ -73,7 +73,13 @@ router.get('/:id', async (req: AuthRequest, res) => {
       .eq('business_id', businessId)
       .single();
 
-    if (error || !rental) return res.status(404).json({ error: 'Rental not found' });
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ error: 'Rental not found' });
+      }
+      throw error;
+    }
+    if (!rental) return res.status(404).json({ error: 'Rental not found' });
 
     if (req.user?.role === 'DRIVER' && rental.driver_id !== req.user.driverId) {
       return res.status(403).json({ error: 'Access denied' });

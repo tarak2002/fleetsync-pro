@@ -12,9 +12,18 @@ export const api = axios.create({
 
 // Request interceptor for auth token
 api.interceptors.request.use(async (config) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-        config.headers.Authorization = `Bearer ${session.access_token}`;
+    try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+            console.error('Failed to get auth session:', error);
+            throw error;
+        }
+        if (session?.access_token) {
+            config.headers.Authorization = `Bearer ${session.access_token}`;
+        }
+    } catch (error) {
+        console.error('Auth interceptor error:', error);
+        // Don't block the request, but log the error
     }
     return config;
 });

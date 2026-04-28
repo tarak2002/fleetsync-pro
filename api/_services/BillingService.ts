@@ -41,9 +41,9 @@ const { data: invoice, error: invErr } = await supabase
  .insert({
  rental_id: rental_id,
  weekly_rate,
- tolls,
- fines,
- credits,
+ tolls: additionalData?.tolls || 0,
+ fines: additionalData?.fines || 0,
+ credits: additionalData?.credits || 0,
  amount,
  due_date: due_date.toISOString(),
  status: 'PENDING' as InvoiceStatus,

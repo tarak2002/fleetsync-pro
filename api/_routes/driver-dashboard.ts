@@ -63,7 +63,14 @@ router.get('/active-rental', authMiddleware, async (req: AuthRequest, res) => {
         }
 
         // Handle case where vehicle join might return an array or object
-        const vehicle = Array.isArray(activeRental.vehicle) ? activeRental.vehicle[0] : activeRental.vehicle;
+        let vehicle: any = null;
+        if (activeRental.vehicle) {
+            if (Array.isArray(activeRental.vehicle)) {
+                vehicle = activeRental.vehicle[0];
+            } else if (typeof activeRental.vehicle === 'object') {
+                vehicle = activeRental.vehicle;
+            }
+        }
 
         if (!vehicle) {
             console.error('[Dashboard] Vehicle data missing in active rental:', activeRental.id);
