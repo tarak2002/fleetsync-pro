@@ -15,43 +15,6 @@ export function LoginPage() {
     const navigate = useNavigate();
     const dispatch = useDispatch();
 
-    const handleDevCreateUser = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            const res = await fetch('/api/auth/dev-create-user', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    email, 
-                    password, 
-                    name: email.split('@')[0],
-                    role: email.includes('admin') ? 'ADMIN' : 'DRIVER'
-                })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Failed to create user');
-            
-            // Auto login after creation
-            await authApi.login(email, password);
-            const profileResponse = await api.get('/api/auth/me');
-            dispatch(setAuthUser(profileResponse.data));
-            
-            if (profileResponse.data.role === 'DRIVER') {
-                navigate('/dashboard/operations');
-            } else if (!profileResponse.data.businessId) {
-                navigate('/setup-business');
-            } else {
-                navigate('/admin');
-            }
-        } catch (err: any) {
-            console.error('Dev create error:', err);
-            setError(err.message || 'Failed. Try logging in instead.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -88,15 +51,6 @@ export function LoginPage() {
         }
     };
 
-    const fillAdminCredentials = () => {
-        setEmail('admin@fleetsyncpro.com.au');
-        setPassword('FleetSync789!');
-    };
-
-    const fillDriverCredentials = () => {
-        setEmail('john.nguyen@email.com');
-        setPassword('FleetSync789!');
-    };
 
     return (
         <div className="min-h-screen flex animate-fade-in bg-white">
@@ -202,51 +156,7 @@ export function LoginPage() {
                             )}
                         </Button>
 
-                        <Button
-                            type="button"
-                            onClick={handleDevCreateUser}
-                            className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold text-base transition-all shadow-md hover:shadow-lg mt-3"
-                            disabled={loading}
-                        >
-                            Create Test Account
-                        </Button>
                     </form>
-
-                    <div className="relative py-4">
-                        <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-slate-200"></div>
-                        </div>
-                        <div className="relative flex justify-center">
-                            <span className="px-4 bg-white text-xs font-semibold text-slate-400 uppercase tracking-widest">Demo Access</span>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <button
-                            type="button"
-                            onClick={fillAdminCredentials}
-                            className="flex items-center justify-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all"
-                        >
-                            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700">
-                                <Car className="w-4 h-4" />
-                            </div>
-                            <div className="text-left">
-                                <p className="text-sm font-bold text-slate-900">Admin</p>
-                            </div>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={fillDriverCredentials}
-                            className="flex items-center justify-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all"
-                        >
-                            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-700">
-                                <User className="w-4 h-4" />
-                            </div>
-                            <div className="text-left">
-                                <p className="text-sm font-bold text-slate-900">Driver</p>
-                            </div>
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>

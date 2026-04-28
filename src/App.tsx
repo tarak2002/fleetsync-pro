@@ -63,7 +63,7 @@ function AppRoutes() {
         id: session.user.id,
         email: session.user.email || '',
         name: session.user.user_metadata?.full_name,
-        role: session.user.user_metadata?.role || existingUser?.role || 'DRIVER',
+        role: existingUser?.role || 'DRIVER',
         driverId: session.user.user_metadata?.driverId || existingUser?.driverId,
         businessId: session.user.user_metadata?.businessId || existingUser?.businessId
       }));
@@ -136,7 +136,7 @@ function AppRoutes() {
           <Route path="tolls" element={<TollsPage />} />
           <Route path="finance" element={<FinancePage />} />
           <Route path="compliance" element={<CompliancePage />} />
-          <Route path="businesses" element={<BusinessSettings />} />
+          <Route path="settings" element={<BusinessSettings />} />
         </Route>
 
         {/* Fallback */}

@@ -489,14 +489,10 @@ export function DriverOperations() {
                                 <div className="flex items-center gap-6 mb-8">
                                     <div className="w-24 h-24 rounded-2xl bg-white overflow-hidden border border-slate-100 shadow-inner flex items-center justify-center relative group">
                                         {vehicle.imageUrl ? (
-                                            <img 
-                                                src={vehicle.imageUrl} 
-                                                alt={vehicle.model} 
-                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" 
-                                                onError={(e) => {
-                                                    // Fallback to Icon if image fails
-                                                    (e.target as HTMLImageElement).src = '/images/fleet/tesla.png';
-                                                }}
+                                            <img
+                                                src={vehicle.imageUrl}
+                                                alt={vehicle.model}
+                                                className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                                             />
                                         ) : (
                                             <Car className="w-10 h-10 text-primary" />

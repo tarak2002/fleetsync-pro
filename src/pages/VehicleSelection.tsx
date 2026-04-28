@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { vehiclesApi } from '../lib/api';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -39,7 +40,7 @@ const MOCK_VEHICLES: Vehicle[] = [
         fuel_type: 'Electric',
         transmission: 'Automatic',
         seats: 5,
-        imageUrl: '/images/fleet/tesla.png'
+        imageUrl: 'https://images.unsplash.com/photo-1560958089-b8a46dd52d12?q=80&w=400&auto=format&fit=crop'
     },
     {
         id: 'mock-2',
@@ -53,7 +54,7 @@ const MOCK_VEHICLES: Vehicle[] = [
         fuel_type: 'Hybrid',
         transmission: 'Automatic',
         seats: 5,
-        imageUrl: '/images/fleet/camry.png'
+        imageUrl: 'https://images.unsplash.com/photo-1566023967268-70dcd41c5c5b?q=80&w=400&auto=format&fit=crop'
     },
     {
         id: 'mock-3',
@@ -67,7 +68,7 @@ const MOCK_VEHICLES: Vehicle[] = [
         fuel_type: 'Electric',
         transmission: 'Automatic',
         seats: 5,
-        imageUrl: '/images/fleet/niro.png'
+        imageUrl: 'https://images.unsplash.com/photo-1578979356856-b59c62ac7a2e?q=80&w=400&auto=format&fit=crop'
     }
 ];
 

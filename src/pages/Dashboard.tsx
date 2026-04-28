@@ -25,7 +25,6 @@ export function Dashboard() {
     const dispatch = useDispatch<AppDispatch>();
     const navigate = useNavigate();
     const { dashboard, alerts } = useSelector((state: RootState) => state.fleet);
-    const [selectedTrip] = useState<any>(null);
     const [isTripDialogOpen, setIsTripDialogOpen] = useState(false);
     const [, setLastUpdated] = useState<Date>(new Date());
 
@@ -85,7 +84,7 @@ export function Dashboard() {
         ? dashboard.weeklyRevenueData
         : [{ name: 'No data', revenue: 0, cost: 0 }];
     const weeklyRevenue = dashboard?.weeklyRevenue ?? 0;
-    const weeklyExpenses = Math.round(weeklyRevenue * 0.48);
+    const weeklyExpenses = dashboard?.weeklyExpenses ?? Math.round(weeklyRevenue * 0.5);
     const weeklyProfit = weeklyRevenue - weeklyExpenses;
     const activeDrivers = dashboard?.drivers?.list?.filter(d => d.status === 'ACTIVE') ?? [];
 
@@ -143,17 +142,24 @@ export function Dashboard() {
                         </div>
                     </CardHeader>
                     <div className="h-[300px] w-full bg-slate-100 relative z-0">
-                        <MapContainer 
-                            center={[-33.8688, 151.2093]} 
-                            zoom={12} 
+                        <MapContainer
+                            center={[-33.8688, 151.2093]}
+                            zoom={12}
                             style={{ height: '100%', width: '100%' }}
                             zoomControl={false}
                         >
                             <TileLayer
                                 url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                             />
-                            <Marker position={[-33.8688, 151.2093]} icon={dotIcon} />
-                            <Marker position={[-33.8800, 151.2150]} icon={dotIcon} />
+                            {dashboard?.activeRentals?.map((rental: any, idx: number) =>
+                                rental.location && (
+                                    <Marker
+                                        key={idx}
+                                        position={[rental.location.lat, rental.location.lng]}
+                                        icon={dotIcon}
+                                    />
+                                )
+                            )}
                         </MapContainer>
                     </div>
                 </Card>
