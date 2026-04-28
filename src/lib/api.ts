@@ -54,6 +54,7 @@ export const authApi = {
             options: {
                 data: {
                     full_name: data.name,
+                    role: 'ADMIN', // SEC-FIX: Ensure new signups are marked as ADMIN (business owners)
                 }
             }
         });

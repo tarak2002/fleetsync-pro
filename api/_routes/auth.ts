@@ -185,13 +185,16 @@ router.get('/me', async (req: AuthRequest, res) => {
     }
 
     // Create user if not found (first login via Supabase Auth)
+    // SEC-FIX: Default new signups to ADMIN (business owners), not DRIVER
+    // Drivers are invited, not self-registered. Check user metadata for explicit role.
+    const roleFromMetadata = user.user_metadata?.role as string;
     const { data: newUser, error } = await supabase
       .from('users')
       .insert({
         id: req.user.id,
         email: req.user.email,
         name: req.user.name || 'User',
-        role: (req.user.role as string) || 'DRIVER',
+        role: roleFromMetadata || 'ADMIN',
         updated_at: new Date().toISOString(),
       })
       .select('*, drivers(id, status)')
