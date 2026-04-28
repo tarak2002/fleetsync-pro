@@ -141,9 +141,56 @@ export class StripeService {
                     }
                     break;
                 }
+case 'checkout.session.completed': {
+      const session = event.data.object as any;
+      const { rentalId, type } = session.metadata || {};
+
+      // SEC-27 FIX: Verify payment was actually successful before activating rental
+      if (type === 'BOND_PAYMENT' && rentalId && session.payment_status === 'paid') {
+        await supabase
+          .from('rentals')
+          .update({
+            status: 'ACTIVE',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', rentalId);
+        console.log(`[Stripe Webhook] Rental ${rentalId} activated via Bond Payment`);
+      } else if (type === 'BOND_PAYMENT' && rentalId) {
+        console.warn(`[Stripe Webhook] Checkout session completed but payment_status was: ${session.payment_status}`);
+      }
+      break;
+    }
+case 'invoice.paid': {
+      const invoice = event.data.object as any;
+      // SEC-10 FIX: Use specific Stripe invoice ID to update only the matching record
+      const stripeInvoiceId = invoice.id;
+      if (stripeInvoiceId) {
+        // Try to find our invoice by stripe's invoice ID stored in metadata or id
+        const { data: ourInvoice } = await supabase
+          .from('invoices')
+          .select('id')
+          .eq('id', stripeInvoiceId)
+          .single();
+
+        if (ourInvoice) {
+          await supabase
+            .from('invoices')
+            .update({
+              status: 'PAID',
+              paid_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', ourInvoice.id);
+          console.log(`[Stripe Webhook] Invoice ${ourInvoice.id} marked PAID`);
+        } else {
+          console.log(`[Stripe Webhook] No matching invoice found for Stripe invoice ${stripeInvoiceId}`);
+        }
+      }
+      break;
+    }
                 case 'payment_intent.payment_failed': {
                     const paymentIntent = event.data.object as Stripe.PaymentIntent;
-                    console.log(`[Stripe Webhook] Payment failed for Intent: ${paymentIntent.id}`);
+                    console.warn(`[Stripe Webhook] Payment failed for Intent: ${paymentIntent.id}`);
                     break;
                 }
                 case 'setup_intent.succeeded': {

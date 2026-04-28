@@ -2,11 +2,10 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     LayoutDashboard, Car, Users, Calendar,
-    AlertTriangle, LogOut, Menu, X, Bell,
-    Banknote, Settings, Map, Search, Clock, MapPin
+    AlertTriangle, LogOut, Menu, Bell,
+    Banknote, Settings, Map, Clock, Radar, Receipt, MapPin, Search
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { Button } from '../ui/button';
 import { logout } from '../../store';
 import type { RootState } from '../../store';
 import { cn } from '../../lib/utils';
@@ -16,7 +15,9 @@ const navItems = [
     { path: '/admin/fleet', icon: Car, label: 'Fleet' },
     { path: '/admin/drivers', icon: Users, label: 'Drivers' },
     { path: '/admin/rentals', icon: Calendar, label: 'Rentals' },
+    { path: '/admin/invoices', icon: Receipt, label: 'Invoices' },
     { path: '/admin/tracking', icon: Map, label: 'Live Tracking' },
+    { path: '/admin/tolls', icon: Radar, label: 'Tolls' },
     { path: '/admin/finance', icon: Banknote, label: 'Finance' },
     { path: '/admin/compliance', icon: AlertTriangle, label: 'Compliance' },
     { path: '/admin/settings', icon: Settings, label: 'Settings' },
@@ -41,8 +42,6 @@ export function Layout() {
         navigate('/login');
     };
 
-    const activeLabel = navItems.find(item => item.path === location.pathname)?.label || 'Overview';
-
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Mobile sidebar overlay */}
@@ -55,7 +54,7 @@ export function Layout() {
 
             {/* Sidebar */}
             <aside className={cn(
-                "fixed top-0 left-0 z-50 h-full w-64 bg-white border-r border-slate-200 transform transition-transform duration-300 ease-in-out lg:translate-x-0",
+                "fixed top-0 left-0 z-50 h-full w-64 bg-white/70 backdrop-blur-xl border-r border-slate-200/50 shadow-sm transform transition-transform duration-300 ease-in-out lg:translate-x-0",
                 sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}>
                 <div className="flex flex-col h-full">

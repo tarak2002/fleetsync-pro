@@ -4,153 +4,171 @@ import { VevoService } from './VevoService.js';
 import { StripeService } from './StripeService.js';
 
 export class DriverService {
-    /**
-     * Register a new driver with VEVO check
-     */
-    static async registerDriver(data: {
-        name: string;
-        email: string;
-        phone?: string;
-        license_no: string;
-        license_expiry?: Date;
-        passport_no?: string;
-    }) {
-        // Check for existing driver
-        const { data: existingDriver } = await supabase
-            .from('drivers')
-            .select('id')
-            .or(`email.eq.${data.email},license_no.eq.${data.license_no}`)
-            .maybeSingle();
+/**
+ * Register a new driver with VEVO check
+ */
+ static async registerDriver(data: {
+ name: string;
+ email: string;
+ phone?: string;
+ license_no: string;
+ license_expiry?: Date;
+ passport_no?: string;
+ user_id?: string;
+ business_id: string;
+ }) {
+ // SEC-28 FIX: Validate license_no is non-empty
+ if (!data.license_no || data.license_no.trim() === '') {
+ throw new Error('License number is required');
+ }
 
-        if (existingDriver) {
-            throw new Error('Driver with this email or license already exists');
-        }
+ // Check for existing driver
+ const { data: existingDriver } = await supabase
+ .from('drivers')
+ .select('id')
+ .eq('business_id', data.business_id)
+ .or(`email.eq.${data.email},license_no.eq.${data.license_no}`)
+ .maybeSingle();
 
-        // Perform VEVO check if passport provided
-        let vevo_status: VevoStatus = 'PENDING';
-        if (data.passport_no) {
-            vevo_status = await VevoService.checkVisaStatus(data.passport_no);
-        }
+ if (existingDriver) {
+ throw new Error('Driver with this email or license already exists');
+ }
 
-        // Determine initial status based on VEVO
-        const status: DriverStatus = vevo_status === 'DENIED'
-            ? 'BLOCKED'
-            : 'PENDING_APPROVAL';
+ // Perform VEVO check if passport provided
+ let vevo_status: VevoStatus = 'PENDING';
+ if (data.passport_no) {
+ vevo_status = await VevoService.checkVisaStatus(data.passport_no);
+ }
 
-        const { data: driver, error } = await supabase
-            .from('drivers')
-            .insert({
-                ...data,
-                license_expiry: data.license_expiry?.toISOString(),
-                vevo_status,
-                vevo_checked_at: data.passport_no ? new Date().toISOString() : null,
-                status,
-                updated_at: new Date().toISOString()
-            })
-            .select()
-            .single();
+ // Determine initial status based on VEVO
+ const status: DriverStatus = vevo_status === 'DENIED'
+ ? 'BLOCKED'
+ : 'PENDING_APPROVAL';
 
-        if (error) throw error;
-        return driver;
-    }
+ const { data: driver, error } = await supabase
+ .from('drivers')
+ .insert({
+ name: data.name,
+ email: data.email,
+ phone: data.phone,
+ license_no: data.license_no,
+ license_expiry: data.license_expiry?.toISOString(),
+ vevo_status,
+ vevo_checked_at: data.passport_no ? new Date().toISOString() : null,
+ status,
+ user_id: data.user_id,
+ business_id: data.business_id,
+ updated_at: new Date().toISOString()
+ })
+ .select()
+ .single();
 
-    /**
-     * Run VEVO check on existing driver
-     */
-    static async runVevoCheck(driver_id: string) {
-        const { data: driver, error: fetchErr } = await supabase
-            .from('drivers')
-            .select('*')
-            .eq('id', driver_id)
-            .single();
+ if (error) throw error;
+ return driver;
+ }
 
-        if (fetchErr || !driver) {
-            throw new Error('Driver not found');
-        }
+/**
+ * Run VEVO check on existing driver
+ */
+ static async runVevoCheck(driver_id: string, businessId: string) {
+ const { data: driver, error: fetchErr } = await supabase
+ .from('drivers')
+ .select('*')
+ .eq('id', driver_id)
+ .eq('business_id', businessId)
+ .single();
 
-        if (!driver.passport_no) {
-            throw new Error('No passport number on file');
-        }
+ if (fetchErr || !driver) {
+ throw new Error('Driver not found');
+ }
 
-        const vevo_status = await VevoService.checkVisaStatus(driver.passport_no);
+ if (!driver.passport_no) {
+ throw new Error('No passport number on file');
+ }
 
-        const { data: updated, error: updateErr } = await supabase
-            .from('drivers')
-            .update({
-                vevo_status,
-                vevo_checked_at: new Date().toISOString(),
-                status: vevo_status === 'DENIED'
-                    ? 'BLOCKED'
-                    : driver.status,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', driver_id)
-            .select()
-            .single();
+ const vevo_status = await VevoService.checkVisaStatus(driver.passport_no);
 
-        if (updateErr) throw updateErr;
-        return updated;
-    }
+ const { data: updated, error: updateErr } = await supabase
+ .from('drivers')
+ .update({
+ vevo_status,
+ vevo_checked_at: new Date().toISOString(),
+ status: vevo_status === 'DENIED'
+ ? 'BLOCKED'
+ : driver.status,
+ updated_at: new Date().toISOString()
+ })
+ .eq('id', driver_id)
+ .eq('business_id', businessId)
+ .select()
+ .single();
 
-    /**
-     * Approve a pending driver
-     */
-    static async approveDriver(driver_id: string) {
-        const { data: driver, error: fetchErr } = await supabase
-            .from('drivers')
-            .select('*')
-            .eq('id', driver_id)
-            .single();
+ if (updateErr) throw updateErr;
+ return updated;
+ }
 
-        if (fetchErr || !driver) {
-            throw new Error('Driver not found');
-        }
+/**
+ * Approve a pending driver
+ */
+ static async approveDriver(driver_id: string, businessId: string) {
+ const { data: driver, error: fetchErr } = await supabase
+ .from('drivers')
+ .select('*')
+ .eq('id', driver_id)
+ .eq('business_id', businessId)
+ .single();
 
-        if (driver.vevo_status === 'DENIED') {
-            throw new Error('Cannot approve driver with DENIED VEVO status');
-        }
+ if (fetchErr || !driver) {
+ throw new Error('Driver not found');
+ }
 
-        // Automatic Stripe Customer Generation
-        try {
-            await StripeService.createCustomer(driver.id, driver.email, driver.name);
-        } catch (e: any) {
-            console.error(`Failed to create Stripe customer for ${driver.email}`, e);
-        }
+ if (driver.vevo_status === 'DENIED' || driver.vevo_status === 'RESTRICTED') {
+ throw new Error('Cannot approve driver with denied or restricted VEVO status');
+ }
 
-        const { data: updated, error: updateErr } = await supabase
-            .from('drivers')
-            .update({ 
-                status: 'ACTIVE',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', driver_id)
-            .select()
-            .single();
+ // Automatic Stripe Customer Generation
+ try {
+ await StripeService.createCustomer(driver.id, driver.email, driver.name);
+ } catch (e: any) {
+ console.error(`Failed to create Stripe customer for ${driver.email}`, e);
+ }
 
-        if (updateErr) throw updateErr;
-        return updated;
-    }
+ const { data: updated, error: updateErr } = await supabase
+ .from('drivers')
+ .update({
+ status: 'ACTIVE',
+ updated_at: new Date().toISOString()
+ })
+ .eq('id', driver_id)
+ .eq('business_id', businessId)
+ .select()
+ .single();
 
-    /**
-     * Block a driver
-     */
-    static async blockDriver(driver_id: string, reason?: string) {
-        if (reason) {
-            console.log(`Blocking driver ${driver_id} for reason: ${reason}`);
-        }
-        const { data, error } = await supabase
-            .from('drivers')
-            .update({ 
-                status: 'BLOCKED',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', driver_id)
-            .select()
-            .single();
+ if (updateErr) throw updateErr;
+ return updated;
+ }
 
-        if (error) throw error;
-        return data;
-    }
+/**
+ * Block a driver
+ */
+ static async blockDriver(driver_id: string, businessId: string, reason?: string) {
+ if (reason) {
+ console.log(`Blocking driver ${driver_id} for reason: ${reason}`);
+ }
+ const { data, error } = await supabase
+ .from('drivers')
+ .update({
+ status: 'BLOCKED',
+ updated_at: new Date().toISOString()
+ })
+ .eq('id', driver_id)
+ .eq('business_id', businessId)
+ .select()
+ .single();
+
+ if (error) throw error;
+ return data;
+ }
 
     /**
      * Get all drivers with optional status filter
@@ -187,29 +205,40 @@ export class DriverService {
     /**
      * Update driver balance
      */
-    static async updateBalance(driver_id: string, amount: number) {
-        // Fetch current balance first since supabase doesn't have a simple increment method in JS client without RPC
-        const { data: driver, error: fetchErr } = await supabase
-            .from('drivers')
-            .select('balance')
-            .eq('id', driver_id)
-            .single();
+static async updateBalance(driver_id: string, amount: number) {
+    // SEC-07 FIX: Use integer cents to avoid floating-point errors
+    const amountCents = Math.round(amount * 100);
 
-        if (fetchErr || !driver) throw new Error('Driver not found');
+    // Try atomic RPC first
+    const { error: rpcErr } = await supabase.rpc('adjust_balance_cents', {
+      p_driver_id: driver_id,
+      p_amount_cents: amountCents
+    });
 
-        const newBalance = Number(driver.balance) + amount;
+    if (rpcErr) {
+      console.error('[DriverService] RPC failed, falling back to direct update');
+      // Fallback: read-then-write with integer math
+      const { data: driver, error: fetchErr } = await supabase
+        .from('drivers')
+        .select('balance')
+        .eq('id', driver_id)
+        .single();
 
-        const { data, error: updateErr } = await supabase
-            .from('drivers')
-            .update({ 
-                balance: newBalance,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', driver_id)
-            .select()
-            .single();
+      if (fetchErr || !driver) throw new Error('Driver not found');
 
-        if (updateErr) throw updateErr;
-        return data;
+      const currentCents = Math.round(Number(driver.balance) * 100);
+      const newBalanceCents = currentCents + amountCents;
+
+      const { data, error: updateErr } = await supabase
+        .from('drivers')
+        .update({ balance: newBalanceCents / 100, updated_at: new Date().toISOString() })
+        .eq('id', driver_id)
+        .select()
+        .single();
+
+      if (updateErr) throw updateErr;
+      return data;
     }
+    return null;
+  }
 }

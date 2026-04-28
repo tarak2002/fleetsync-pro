@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Car, Search, Filter, Phone, MessageSquare } from 'lucide-react';
 import { fetchDashboard } from '../store';
@@ -25,10 +25,28 @@ const vehicleIcon = new L.Icon({
     shadowSize: [41, 41]
 });
 
+const selectedIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+});
+
+function MapController({ center, zoom }: { center: [number, number], zoom: number }) {
+    const map = useMap();
+    useEffect(() => {
+        map.flyTo(center, zoom, { duration: 1.5 });
+    }, [center, zoom, map]);
+    return null;
+}
+
 export function LiveTracking() {
     const dispatch = useDispatch<AppDispatch>();
     const { dashboard } = useSelector((state: RootState) => state.fleet);
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
 
     useEffect(() => {
         dispatch(fetchDashboard());
@@ -74,6 +92,10 @@ export function LiveTracking() {
         v.driver.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const selectedVehicle = activeVehicles.find(v => v.id === selectedVehicleId);
+    const mapCenter = selectedVehicle ? selectedVehicle.coordinates : [-33.8688, 151.2093] as [number, number];
+    const mapZoom = selectedVehicle ? 15 : 12;
+
     return (
         <div className="flex flex-col h-[calc(100vh-6rem)] animate-fade-in">
             {/* Header */}
@@ -110,9 +132,13 @@ export function LiveTracking() {
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-4">
                         {filteredVehicles.map(vehicle => (
-                            <div key={vehicle.id} className={cn(
+                            <div 
+                                key={vehicle.id} 
+                                onClick={() => setSelectedVehicleId(vehicle.id)}
+                                className={cn(
                                 "p-4 rounded-xl border transition-all cursor-pointer",
-                                vehicle.status === 'On Going' ? "border-primary/50 bg-blue-50/50 shadow-sm shadow-primary/10" : "border-slate-100 hover:border-slate-200"
+                                selectedVehicleId === vehicle.id ? "ring-2 ring-primary border-primary" : "border-slate-100 hover:border-slate-200",
+                                vehicle.status === 'On Going' ? "bg-blue-50/30" : ""
                             )}>
                                 <div className="flex justify-between items-start mb-2">
                                     <div>
@@ -155,7 +181,7 @@ export function LiveTracking() {
                                         </div>
                                         <span className="text-sm font-medium text-slate-700">{vehicle.driver}</span>
                                     </div>
-                                    <div className="flex gap-1">
+                                    <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                                         <button className="p-1.5 rounded-lg hover:bg-slate-100 text-primary">
                                             <Phone className="w-4 h-4" />
                                         </button>
@@ -172,10 +198,11 @@ export function LiveTracking() {
                 {/* Map Area */}
                 <div className="flex-1 bg-slate-100 rounded-2xl overflow-hidden shadow-inner border border-slate-200 relative z-0">
                     <MapContainer 
-                        center={[-33.8688, 151.2093]} 
-                        zoom={12} 
+                        center={mapCenter} 
+                        zoom={mapZoom} 
                         style={{ height: '100%', width: '100%' }}
                     >
+                        <MapController center={mapCenter} zoom={mapZoom} />
                         <TileLayer
                             url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
                             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -184,7 +211,10 @@ export function LiveTracking() {
                             <Marker 
                                 key={vehicle.id} 
                                 position={vehicle.coordinates}
-                                icon={vehicleIcon}
+                                icon={selectedVehicleId === vehicle.id ? selectedIcon : vehicleIcon}
+                                eventHandlers={{
+                                    click: () => setSelectedVehicleId(vehicle.id),
+                                }}
                             >
                                 <Popup>
                                     <div className="font-semibold text-slate-900">{vehicle.model}</div>
@@ -193,7 +223,7 @@ export function LiveTracking() {
                                 </Popup>
                             </Marker>
                         ))}
-                        {activeVehicles[0].route && (
+                        {activeVehicles[0].route && selectedVehicleId === activeVehicles[0].id && (
                             <Polyline 
                                 positions={activeVehicles[0].route} 
                                 color="#2563EB" 

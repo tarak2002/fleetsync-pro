@@ -2,13 +2,15 @@ import { Request, Response, NextFunction } from 'express';
 import { supabase } from '../_lib/supabase.js';
 
 export interface AuthRequest extends Request {
-    user?: {
-        id: string;
-        email: string;
-        name?: string;
-        role?: string;
-        driverId?: string;
-    };
+ user?: {
+ id: string;
+ email: string;
+ name?: string;
+ role?: string;
+ driverId?: string;
+ driverStatus?: string;
+ businessId?: string;
+ };
 }
 
 export const authMiddleware = async (
@@ -34,7 +36,7 @@ export const authMiddleware = async (
         // Extract context from database to ensure metadata is always synced
         const { data: dbUser } = await supabase
             .from('users')
-            .select('role, drivers(id)')
+            .select('role, business_id, drivers(id, status)')
             .eq('id', user.id)
             .single();
 
@@ -43,13 +45,19 @@ export const authMiddleware = async (
           ? dbUser.drivers[0]?.id 
           : (dbUser?.drivers as any)?.id || user.user_metadata?.driverId;
 
-        console.log(`[Auth] Authenticated as ${role} (User: ${user.id}, Driver: ${driverId})`);
+        const driverStatus = Array.isArray(dbUser?.drivers)
+          ? dbUser.drivers[0]?.status
+          : (dbUser?.drivers as any)?.status;
+
+        console.log(`[Auth] Authenticated as ${role} (User: ${user.id}, Driver: ${driverId}, Business: ${dbUser?.business_id || 'NONE'})`);
 
         req.user = {
             id: user.id,
             email: user.email || '',
             role: role,
-            driverId: driverId
+            driverId: driverId,
+            driverStatus: driverStatus,
+            businessId: dbUser?.business_id || user.user_metadata?.businessId
         };
         
         next();

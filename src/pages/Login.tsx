@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
-import { Car, LogIn, User, Sparkles } from 'lucide-react';
+import { Car, LogIn, User } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { authApi, api } from '../lib/api';
 import { setAuthUser } from '../store';
 
@@ -15,6 +14,43 @@ export function LoginPage() {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const dispatch = useDispatch();
+
+    const handleDevCreateUser = async () => {
+        setLoading(true);
+        setError('');
+        try {
+            const res = await fetch('/api/auth/dev-create-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    email, 
+                    password, 
+                    name: email.split('@')[0],
+                    role: email.includes('admin') ? 'ADMIN' : 'DRIVER'
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to create user');
+            
+            // Auto login after creation
+            await authApi.login(email, password);
+            const profileResponse = await api.get('/api/auth/me');
+            dispatch(setAuthUser(profileResponse.data));
+            
+            if (profileResponse.data.role === 'DRIVER') {
+                navigate('/dashboard/operations');
+            } else if (!profileResponse.data.businessId) {
+                navigate('/setup-business');
+            } else {
+                navigate('/admin');
+            }
+        } catch (err: any) {
+            console.error('Dev create error:', err);
+            setError(err.message || 'Failed. Try logging in instead.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -39,6 +75,8 @@ export function LoginPage() {
 
             if (user.role === 'DRIVER') {
                 navigate('/dashboard/operations');
+            } else if (!user.businessId) {
+                navigate('/setup-business');
             } else {
                 navigate('/admin');
             }
@@ -162,6 +200,15 @@ export function LoginPage() {
                                     Sign In
                                 </>
                             )}
+                        </Button>
+
+                        <Button
+                            type="button"
+                            onClick={handleDevCreateUser}
+                            className="w-full h-12 rounded-xl bg-primary hover:bg-primary/90 text-white font-semibold text-base transition-all shadow-md hover:shadow-lg mt-3"
+                            disabled={loading}
+                        >
+                            Create Test Account
                         </Button>
                     </form>
 

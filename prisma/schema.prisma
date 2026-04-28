@@ -8,7 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // url      = env("DATABASE_URL")
 }
 
 // ============ ENUMS ============
@@ -59,58 +59,122 @@ enum UserRole {
   DRIVER
 }
 
+enum ShiftStatus {
+  NOT_STARTED
+  ACTIVE
+  ENDED
+}
+
 // ============ MODELS ============
 
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  name      String
-  role      UserRole @default(DRIVER)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+model Business {
+  id                  String   @id @default(uuid())
+  name                String
+  abn                 String?
+  address             String?
+  phone               String?
+  email               String?
+  is_active           Boolean  @default(true)
+  
+  // Bank Details
+  bank_name           String?
+  bank_bsb            String?
+  bank_account_number String?
+  bank_account_name   String?
+  
+  // Admin Info
+  admin_user_id       String?
+  admin_name          String?
+  
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
 
-  driver Driver?
+  users               User[]
+  vehicles            Vehicle[]
+  drivers             Driver[]
+  documents           VehicleDocument[]
+
+  @@map("businesses")
+}
+
+model User {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  name        String
+  role        UserRole  @default(DRIVER)
+  business_id String?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  business    Business? @relation(fields: [business_id], references: [id])
+  driver      Driver?
 
   @@map("users")
 }
 
 model Vehicle {
-  id              String        @id @default(uuid())
-  vin             String        @unique
-  plate           String        @unique
-  make            String
-  model           String
-  year            Int
-  color           String
-  status          VehicleStatus @default(DRAFT)
+  id               String            @id @default(uuid())
+  business_id      String?
+  vin              String            @unique
+  plate            String            @unique
+  make             String
+  model            String
+  year             Int
+  color            String
+  status           VehicleStatus     @default(DRAFT)
 
   // NSW Compliance Dates
-  rego_expiry     DateTime
-  ctp_expiry      DateTime
+  rego_expiry      DateTime
+  ctp_expiry       DateTime
   pink_slip_expiry DateTime
 
   // Financials
-  weekly_rate     Decimal       @default(0) @db.Decimal(10, 2)
-  bond_amount     Decimal       @default(0) @db.Decimal(10, 2)
-  insurance_cost  Decimal       @default(0) @db.Decimal(10, 2) // Annual insurance cost
+  weekly_rate      Decimal           @default(0) @db.Decimal(10, 2)
+  bond_amount      Decimal           @default(0) @db.Decimal(10, 2)
+  insurance_cost   Decimal           @default(0) @db.Decimal(10, 2)
 
   // Documents
-  rego_doc        String?
-  ctp_doc         String?
-  pink_slip_doc   String?
+  rego_doc         String?
+  ctp_doc          String?
+  pink_slip_doc    String?
 
-  created_at      DateTime      @default(now())
-  updated_at      DateTime      @updatedAt
+  created_at       DateTime          @default(now())
+  updated_at       DateTime          @updatedAt
 
-  rentals         Rental[]
-  alerts          Alert[]
+  business         Business?         @relation(fields: [business_id], references: [id])
+  rentals          Rental[]
+  alerts           Alert[]
+  documents        VehicleDocument[]
 
   @@map("vehicles")
+}
+
+model VehicleDocument {
+  id            String   @id @default(uuid())
+  vehicle_id    String
+  business_id   String
+  name          String
+  doc_type      String   @default("OTHER")
+  file_url      String
+  file_name     String?
+  file_size     Int?
+  mime_type     String?
+  expiry_date   DateTime?
+  notes         String?
+  uploaded_by   String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  vehicle       Vehicle  @relation(fields: [vehicle_id], references: [id])
+  business      Business @relation(fields: [business_id], references: [id])
+
+  @@map("vehicle_documents")
 }
 
 model Driver {
   id              String       @id @default(uuid())
   user_id         String?      @unique
+  business_id     String?
   name            String
   email           String       @unique
   phone           String?
@@ -126,7 +190,7 @@ model Driver {
   status          DriverStatus @default(PENDING_APPROVAL)
   balance         Decimal      @default(0) @db.Decimal(10, 2)
 
-  // Documents (paths to uploaded files)
+  // Documents
   passport_doc    String?
   license_doc     String?
 
@@ -138,6 +202,7 @@ model Driver {
   updated_at      DateTime     @updatedAt
 
   user            User?        @relation(fields: [user_id], references: [id])
+  business        Business?    @relation(fields: [business_id], references: [id])
   rentals         Rental[]
 
   @@map("drivers")
@@ -171,18 +236,16 @@ model Invoice {
   id              String        @id @default(uuid())
   rental_id       String
   
-  // Billing Formula: (Weekly_Rate + Tolls + Fines) - Credits
   weekly_rate     Decimal       @db.Decimal(10, 2)
   tolls           Decimal       @default(0) @db.Decimal(10, 2)
   fines           Decimal       @default(0) @db.Decimal(10, 2)
   credits         Decimal       @default(0) @db.Decimal(10, 2)
-  amount          Decimal       @db.Decimal(10, 2) // Final calculated amount
+  amount          Decimal       @db.Decimal(10, 2)
   
   due_date        DateTime
   paid_at         DateTime?
   status          InvoiceStatus @default(PENDING)
 
-  // Stripe
   stripe_payment_intent_id  String? @unique
 
   created_at      DateTime      @default(now())
@@ -201,7 +264,7 @@ model TollCharge {
   date            DateTime
   amount          Decimal  @db.Decimal(10, 2)
   location        String?
-  provider_tx_id  String?  @unique // Linkt or alternative provider's unique ID for this specific drive
+  provider_tx_id  String?  @unique
   
   created_at      DateTime @default(now())
 
@@ -246,18 +309,12 @@ model EarningsRecord {
   gross_earnings  Decimal  @db.Decimal(10, 2)
   net_earnings    Decimal  @db.Decimal(10, 2)
   trips           Int
-  platform        String   @default("uber") // uber, didi, ola
+  platform        String   @default("uber")
   
   created_at      DateTime @default(now())
 
   @@unique([driver_id, week_starting, platform])
   @@map("earnings_records")
-}
-
-enum ShiftStatus {
-  NOT_STARTED
-  ACTIVE
-  ENDED
 }
 
 model Shift {
@@ -282,10 +339,9 @@ model ConditionReport {
   vehicle_id      String
   driver_id       String
   
-  // Damage markers as JSON array
-  damage_markers  String? // JSON: [{x, y, description, photo_url}]
+  damage_markers  String?
   notes           String?
-  photos          String[] // Array of photo URLs
+  photos          String[]
   
   verified_at     DateTime @default(now())
   created_at      DateTime @default(now())
@@ -301,14 +357,11 @@ model AccidentReport {
   driver_id       String
   vehicle_id      String
   
-  // Step 1: Safety
   is_safe         Boolean  @default(true)
   emergency_called Boolean  @default(false)
   
-  // Step 2: Scene photos
   scene_photos    String[]
   
-  // Step 3: Third party details
   third_party_name String?
   third_party_phone String?
   third_party_plate String?
@@ -318,7 +371,6 @@ model AccidentReport {
   location        String?
   occurred_at     DateTime
   
-  // Offline sync
   synced_at       DateTime?
   
   created_at      DateTime @default(now())

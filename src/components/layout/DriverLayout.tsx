@@ -1,9 +1,9 @@
-import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
-    LayoutDashboard, Car, Calendar,
+    LayoutDashboard, Car,
     LogOut, Menu, Bell,
-    Banknote, Settings, MapPin, Clock, Search, History
+    Banknote, Settings, Clock, History
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { logout } from '../../store';
@@ -22,7 +22,6 @@ export function DriverLayout() {
     const [currentTime, setCurrentTime] = useState(new Date());
     const dispatch = useDispatch();
     const navigate = useNavigate();
-    const location = useLocation();
     const { user } = useSelector((state: RootState) => state.auth);
 
     useEffect(() => {

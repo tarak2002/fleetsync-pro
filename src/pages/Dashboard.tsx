@@ -1,24 +1,17 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Car, AlertTriangle, TrendingUp, Calendar, MapPin, Activity, CheckCircle2, Clock, Wallet, ArrowUpRight, ArrowDownRight, Zap, ShieldAlert, BarChart3, Info } from 'lucide-react';
+import { Car, AlertTriangle, TrendingUp, Activity, CheckCircle2, Clock, Wallet, ArrowUpRight, Zap, ShieldAlert, BarChart3, Info, Banknote } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { fetchDashboard, fetchAlerts } from '../store';
 import type { RootState, AppDispatch } from '../store';
-import { formatCurrency, cn } from '../lib/utils';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { LoadingScreen } from '../components/common/LoadingScreen';
-import { useState } from 'react';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-} from '../components/ui/dialog';
-import { Eye, Map as MapIconIcon, User, Navigation2, Calendar as CalendarIcon, Hash, ArrowRight, Timer, MapPin as MapPinIcon, MoreHorizontal } from 'lucide-react';
+import { Dialog, DialogContent } from '../components/ui/dialog';
+import { User, Navigation2, Hash, ArrowRight, Timer, MapPin as MapPinIcon } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
 // Custom Map Icon
@@ -28,36 +21,24 @@ const dotIcon = new L.Icon({
     iconAnchor: [10, 10],
 });
 
-const fuelData = [
-    { name: '05 Nov', val: 120 },
-    { name: '06 Nov', val: 380 },
-    { name: '07 Nov', val: 200 },
-    { name: '08 Nov', val: 250 },
-    { name: '09 Nov', val: 400 },
-    { name: '10 Nov', val: 180 },
-    { name: '11 Nov', val: 220 },
-    { name: '12 Nov', val: 350 },
-];
-
-const financeData = [
-    { name: 'Mon', revenue: 4200, cost: 2100 },
-    { name: 'Tue', revenue: 3800, cost: 1900 },
-    { name: 'Wed', revenue: 5100, cost: 2400 },
-    { name: 'Thu', revenue: 4900, cost: 2200 },
-    { name: 'Fri', revenue: 6200, cost: 3100 },
-    { name: 'Sat', revenue: 5800, cost: 2800 },
-    { name: 'Sun', revenue: 4500, cost: 2300 },
-];
-
 export function Dashboard() {
     const dispatch = useDispatch<AppDispatch>();
+    const navigate = useNavigate();
     const { dashboard, alerts } = useSelector((state: RootState) => state.fleet);
-    const [selectedTrip, setSelectedTrip] = useState<any>(null);
+    const [selectedTrip] = useState<any>(null);
     const [isTripDialogOpen, setIsTripDialogOpen] = useState(false);
+    const [, setLastUpdated] = useState<Date>(new Date());
 
     useEffect(() => {
         dispatch(fetchDashboard());
         dispatch(fetchAlerts());
+        // Poll every 30 seconds for realtime updates
+        const interval = setInterval(() => {
+            dispatch(fetchDashboard());
+            dispatch(fetchAlerts());
+            setLastUpdated(new Date());
+        }, 30000);
+        return () => clearInterval(interval);
     }, [dispatch]);
 
     if (!dashboard) {
@@ -67,7 +48,7 @@ export function Dashboard() {
     const stats = [
         {
             title: 'Total Vehicle',
-            value: dashboard.vehicles.total,
+            value: dashboard?.vehicles?.total ?? 0,
             icon: Car,
             color: 'text-primary',
             bgColor: 'bg-blue-50',
@@ -75,7 +56,7 @@ export function Dashboard() {
         },
         {
             title: 'Active Vehicle',
-            value: dashboard.rentals.active,
+            value: dashboard?.rentals?.active ?? 0,
             icon: CheckCircle2,
             color: 'text-emerald-600',
             bgColor: 'bg-emerald-50',
@@ -83,7 +64,7 @@ export function Dashboard() {
         },
         {
             title: 'Idle Vehicle',
-            value: dashboard.vehicles.byStatus['AVAILABLE'] || 0,
+            value: dashboard?.vehicles?.byStatus?.['AVAILABLE'] ?? 0,
             icon: Clock,
             color: 'text-amber-600',
             bgColor: 'bg-amber-50',
@@ -91,7 +72,7 @@ export function Dashboard() {
         },
         {
             title: 'Maintenance Required',
-            value: alerts.length,
+            value: alerts?.length ?? 0,
             icon: AlertTriangle,
             color: 'text-red-600',
             bgColor: 'bg-red-50',
@@ -99,21 +80,35 @@ export function Dashboard() {
         },
     ];
 
-    const mockTrips = [
-        { id: 'T2234', driver: 'Hendra', vehicle: 'Daihatsu Granmax', destination: 'George Street, Sydney CBD', duration: '--', status: 'On Going' },
-        { id: 'T1241', driver: 'Lily', vehicle: 'DFSK Supercab', destination: 'Campbell Parade, Bondi Beach', duration: '--', status: 'Transit' },
-        { id: 'T2321', driver: 'Toni', vehicle: 'L300', destination: 'Church Street, Parramatta', duration: '--', status: 'Trouble' },
-        { id: 'T2187', driver: 'Arif', vehicle: 'Suzuki Carry', destination: 'Oxford Street, Darlinghurst', duration: '2h 45m', status: 'Done' },
-    ];
+    const recentRentals = dashboard?.recentRentals ?? [];
+    const financeData = (dashboard?.weeklyRevenueData || []).length > 0
+        ? dashboard.weeklyRevenueData
+        : [{ name: 'No data', revenue: 0, cost: 0 }];
+    const weeklyRevenue = dashboard?.weeklyRevenue ?? 0;
+    const weeklyExpenses = Math.round(weeklyRevenue * 0.48);
+    const weeklyProfit = weeklyRevenue - weeklyExpenses;
+    const activeDrivers = dashboard?.drivers?.list?.filter(d => d.status === 'ACTIVE') ?? [];
 
     return (
         <div className="space-y-6 animate-fade-in">
-            {/* Page Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
-                <p className="text-slate-500 text-sm mt-1">
-                    Overview of your fleet management operations
-                </p>
+            {/* Page Header & Quick Actions */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
+                    <p className="text-slate-500 text-sm mt-1">
+                        Overview of your fleet management operations
+                    </p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <Button variant="outline" className="bg-white border-slate-200 shadow-sm text-slate-700 hover:text-blue-600 hover:border-blue-200 transition-all" onClick={() => navigate('/admin/fleet')}>
+                        <Car className="w-4 h-4 mr-2" />
+                        Add Vehicle
+                    </Button>
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20 transition-all" onClick={() => navigate('/admin/invoices')}>
+                        <Banknote className="w-4 h-4 mr-2" />
+                        New Invoice
+                    </Button>
+                </div>
             </div>
 
             {/* Top Stats Grid */}
@@ -168,9 +163,9 @@ export function Dashboard() {
                     <Card className="border border-slate-200 shadow-sm flex-1">
                         <CardContent className="p-5 flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-slate-500 font-medium">Total Trip</p>
-                                <p className="text-3xl font-bold text-slate-900 mt-1">30</p>
-                                <p className="text-xs text-emerald-600 mt-1 font-medium">+0% from last month</p>
+                                <p className="text-sm text-slate-500 font-medium">Total Rentals</p>
+                                <p className="text-3xl font-bold text-slate-900 mt-1">{dashboard.rentals.total}</p>
+                                <p className="text-xs text-slate-500 mt-1 font-medium">{dashboard.rentals.thisMonth} this month</p>
                             </div>
                             <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary flex items-center justify-center bg-primary/5">
                                 <Activity className="w-8 h-8 text-primary animate-pulse" />
@@ -180,9 +175,9 @@ export function Dashboard() {
                     <Card className="border border-slate-200 shadow-sm flex-1">
                         <CardContent className="p-5 flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-slate-500 font-medium">On Going Trip</p>
-                                <p className="text-3xl font-bold text-slate-900 mt-1">10</p>
-                                <p className="text-xs text-emerald-600 mt-1 font-medium">+0% from last month</p>
+                                <p className="text-sm text-slate-500 font-medium">Active Rentals</p>
+                                <p className="text-3xl font-bold text-slate-900 mt-1">{dashboard.rentals.active}</p>
+                                <p className="text-xs text-emerald-600 mt-1 font-medium">{dashboard.rentals.thisWeek} this week</p>
                             </div>
                             <div className="flex items-end gap-1 h-12">
                                 <div className="w-2 h-6 bg-primary/40 rounded-t" />
@@ -195,15 +190,15 @@ export function Dashboard() {
                     <Card className="border border-slate-200 shadow-sm flex-1">
                         <CardContent className="p-5 flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-slate-500 font-medium">Canceled Trip</p>
-                                <p className="text-3xl font-bold text-slate-900 mt-1">20</p>
-                                <p className="text-xs text-red-500 mt-1 font-medium">+10% from last month</p>
+                                <p className="text-sm text-slate-500 font-medium">Pending Invoices</p>
+                                <p className="text-3xl font-bold text-slate-900 mt-1">{dashboard.invoices.pending.count}</p>
+                                <p className="text-xs text-amber-500 mt-1 font-medium">${dashboard.invoices.pending.total.toLocaleString()} outstanding</p>
                             </div>
                             <div className="flex items-end gap-1 h-12">
-                                <div className="w-2 h-10 bg-red-400 rounded-t" />
-                                <div className="w-2 h-8 bg-red-300 rounded-t" />
-                                <div className="w-2 h-12 bg-red-500 rounded-t" />
-                                <div className="w-2 h-6 bg-red-200 rounded-t" />
+                                <div className="w-2 h-10 bg-amber-400 rounded-t" />
+                                <div className="w-2 h-8 bg-amber-300 rounded-t" />
+                                <div className="w-2 h-12 bg-amber-500 rounded-t" />
+                                <div className="w-2 h-6 bg-amber-200 rounded-t" />
                             </div>
                         </CardContent>
                     </Card>
@@ -216,16 +211,16 @@ export function Dashboard() {
                 <Card className="border border-slate-200 shadow-sm">
                     <CardHeader className="border-b border-slate-100 bg-white py-4">
                         <div className="flex items-center justify-between">
-                            <CardTitle className="text-base font-bold text-slate-900">Fuel Consumption Statistic</CardTitle>
-                            <Badge variant="outline" className="text-xs bg-slate-50">11/05/2024 - 11/12/2024</Badge>
+                            <CardTitle className="text-base font-bold text-slate-900">Weekly Revenue</CardTitle>
+                            <Badge variant="outline" className="text-xs bg-slate-50">Last 7 days • Live</Badge>
                         </div>
                     </CardHeader>
                     <CardContent className="p-6">
                         <div className="h-[250px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={fuelData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                <AreaChart data={financeData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                                     <defs>
-                                        <linearGradient id="colorVal" x1="0" y1="0" x2="0" y2="1">
+                                        <linearGradient id="colorRevSmall" x1="0" y1="0" x2="0" y2="1">
                                             <stop offset="5%" stopColor="#2563EB" stopOpacity={0.3}/>
                                             <stop offset="95%" stopColor="#2563EB" stopOpacity={0}/>
                                         </linearGradient>
@@ -233,73 +228,70 @@ export function Dashboard() {
                                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} dy={10} />
                                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
-                                    <Area type="monotone" dataKey="val" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#colorVal)" />
+                                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(v) => v != null ? [`$${Number(v).toLocaleString()}`, 'Revenue'] : [null, '']} />
+                                    <Area type="monotone" dataKey="revenue" stroke="#2563EB" strokeWidth={3} fillOpacity={1} fill="url(#colorRevSmall)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Latest Trip Table */}
+                {/* Recent Rentals Table */}
                 <Card className="border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                     <CardHeader className="border-b border-slate-100 bg-white py-4">
                         <div className="flex items-center justify-between">
-                            <CardTitle className="text-base font-bold text-slate-900">Latest Trip</CardTitle>
-                            <button className="text-sm text-primary font-medium hover:underline">See All</button>
+                            <CardTitle className="text-base font-bold text-slate-900">Recent Rentals</CardTitle>
+                            <span className="text-[10px] text-slate-400 font-medium">Live • updates every 30s</span>
                         </div>
                     </CardHeader>
                     <div className="flex-1 overflow-x-auto">
+                        {recentRentals.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                                <Activity className="w-8 h-8 mb-2 opacity-40" />
+                                <p className="text-sm">No active rentals</p>
+                            </div>
+                        ) : (
                         <table className="w-full text-sm text-left">
                             <thead className="text-xs text-slate-500 bg-slate-50/50">
                                 <tr>
-                                    <th className="px-4 py-3 font-semibold">No</th>
-                                    <th className="px-4 py-3 font-semibold">Trip Number</th>
+                                    <th className="px-4 py-3 font-semibold">#</th>
                                     <th className="px-4 py-3 font-semibold">Driver</th>
                                     <th className="px-4 py-3 font-semibold">Vehicle</th>
-                                    <th className="px-4 py-3 font-semibold">Destination</th>
+                                    <th className="px-4 py-3 font-semibold">Rate/wk</th>
                                     <th className="px-4 py-3 font-semibold text-center">Status</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {mockTrips.map((trip, idx) => (
-                                    <tr 
-                                        key={trip.id} 
-                                        id={`trip-row-${trip.id.toLowerCase()}`}
-                                        className="hover:bg-slate-50 transition-colors group cursor-pointer"
-                                        onClick={() => {
-                                            setSelectedTrip(trip);
-                                            setIsTripDialogOpen(true);
-                                        }}
-                                    >
-                                        <td className="px-4 py-3 text-slate-500">{idx + 1}</td>
-                                        <td className="px-4 py-3 font-medium text-slate-900">{trip.id}</td>
-                                        <td className="px-4 py-3 flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">
-                                                {trip.driver.charAt(0)}
+                                {recentRentals.map((rental, idx) => (
+                                    <tr key={rental.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-4 py-3 text-slate-400 text-xs">{idx + 1}</td>
+                                        <td className="px-4 py-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                                                    {rental.driver?.name?.charAt(0) ?? '?'}
+                                                </div>
+                                                <span className="font-medium text-slate-700">{rental.driver?.name ?? '—'}</span>
                                             </div>
-                                            <span className="font-medium text-slate-700">{trip.driver}</span>
                                         </td>
                                         <td className="px-4 py-3">
-                                            <p className="font-medium text-slate-900">{trip.vehicle}</p>
+                                            <p className="font-medium text-slate-900 text-xs">{rental.vehicle ? `${rental.vehicle.make} ${rental.vehicle.model}` : '—'}</p>
+                                            <p className="text-[10px] text-slate-400">{rental.vehicle?.plate}</p>
                                         </td>
-                                        <td className="px-4 py-3 text-slate-600 max-w-[150px] truncate" title={trip.destination}>
-                                            {trip.destination}
-                                        </td>
+                                        <td className="px-4 py-3 font-semibold text-slate-900">${Number(rental.weekly_rate).toFixed(0)}</td>
                                         <td className="px-4 py-3 text-center">
                                             <span className={`inline-flex items-center justify-center px-2 py-1 rounded text-[10px] font-bold ${
-                                                trip.status === 'Done' ? 'bg-emerald-100 text-emerald-700' :
-                                                trip.status === 'Trouble' ? 'bg-red-100 text-red-700' :
-                                                trip.status === 'Transit' ? 'bg-amber-100 text-amber-700' :
-                                                'bg-blue-100 text-blue-700'
+                                                rental.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' :
+                                                rental.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                                                'bg-slate-100 text-slate-600'
                                             }`}>
-                                                {trip.status}
+                                                {rental.status}
                                             </span>
                                         </td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
+                        )}
                     </div>
                 </Card>
             </div>
@@ -326,15 +318,15 @@ export function Dashboard() {
                         <div className="grid grid-cols-3 gap-6 mb-6">
                             <div className="space-y-1">
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Weekly Revenue</p>
-                                <p className="text-xl font-bold text-slate-900">$34,500.00</p>
+                                <p className="text-xl font-bold text-slate-900">${weeklyRevenue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
                             <div className="space-y-1">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Operational Cost</p>
-                                <p className="text-xl font-bold text-slate-900">$16,800.00</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Est. Expenses</p>
+                                <p className="text-xl font-bold text-slate-900">${weeklyExpenses.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
                             <div className="space-y-1">
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Net Profit</p>
-                                <p className="text-xl font-bold text-emerald-600">$17,700.00</p>
+                                <p className={`text-xl font-bold ${weeklyProfit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>${weeklyProfit.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                             </div>
                         </div>
                         <div className="h-[200px] w-full">
@@ -435,12 +427,10 @@ export function Dashboard() {
                         </div>
                     </CardHeader>
                     <div className="p-4 space-y-4">
-                        {[
-                            { name: 'Hendra', score: 98, status: 'Elite', trips: 142 },
-                            { name: 'Lily', score: 94, status: 'Top Tier', trips: 128 },
-                            { name: 'Toni', score: 89, status: 'Reliable', trips: 115 },
-                        ].map((driver, i) => (
-                            <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/50 border border-slate-100 hover:bg-white hover:shadow-md transition-all cursor-pointer">
+                        {activeDrivers.length === 0 ? (
+                            <p className="text-center text-slate-400 text-sm py-6">No active drivers</p>
+                        ) : activeDrivers.slice(0, 5).map((driver, i) => (
+                            <div key={driver.id} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50/50 border border-slate-100 hover:bg-white hover:shadow-md transition-all cursor-pointer">
                                 <div className="flex items-center gap-3">
                                     <div className="relative">
                                         <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-600">
@@ -452,14 +442,11 @@ export function Dashboard() {
                                     </div>
                                     <div>
                                         <p className="text-sm font-bold text-slate-900">{driver.name}</p>
-                                        <p className="text-[10px] text-slate-500 font-medium">{driver.status} • {driver.trips} Trips</p>
+                                        <p className="text-[10px] text-slate-500 font-medium">Active Driver</p>
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-sm font-black text-emerald-600">{driver.score}%</p>
-                                    <div className="w-20 h-1 bg-slate-200 rounded-full mt-1 overflow-hidden">
-                                        <div className="h-full bg-emerald-500" style={{ width: `${driver.score}%` }} />
-                                    </div>
+                                    <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none text-[10px]">Active</Badge>
                                 </div>
                             </div>
                         ))}

@@ -1,24 +1,22 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-    Car, FileText, Shield, AlertTriangle, Copy, Check, Phone, Camera, 
-    ChevronRight, Clock, X, Video, Sparkles, User, CheckCircle2, 
-    Download, LogOut, DollarSign, TrendingUp, MapPin, Navigation, Map, BarChart3, Zap
+    Car, FileText, AlertTriangle, Copy, Check, Phone, 
+    ChevronRight, Clock, Sparkles, CheckCircle2, 
+    Download, DollarSign, MapPin, Navigation, Map, BarChart3, Zap, ZapOff,
+    ShieldCheck, BadgeCheck, FileSignature
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogTitle,
-    DialogFooter,
 } from '../components/ui/dialog';
 import { useDispatch } from 'react-redux';
 import { logout } from '../store';
-import { driverDashboardApi, api, authApi, API_BASE_URL } from '../lib/api';
+import { driverDashboardApi, api, authApi } from '../lib/api';
 
 // --- Interfaces ---
 interface VehicleInfo {
@@ -58,6 +56,7 @@ interface DashboardData {
     shift_status?: string;
     started_at?: string;
     last_condition_report?: string;
+    driver_status?: string;
 }
 
 interface DocumentData {
@@ -89,6 +88,7 @@ export function DriverOperations() {
     const [payingInvoiceId, setPayingInvoiceId] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
     const [startingShift, setStartingShift] = useState(false);
+    const [endingShift, setEndingShift] = useState(false);
     const [showAccidentWizard, setShowAccidentWizard] = useState(false);
     const [accidentStep, setAccidentStep] = useState(1);
     const [downloadingDocId, setDownloadingDocId] = useState<string | null>(null);
@@ -174,11 +174,11 @@ export function DriverOperations() {
     };
 
     const handleStartShift = async () => {
-        if (!data?.shift_id || !data?.vehicle || !driverId) return;
+        if (!data?.rental_id || !data?.vehicle || !driverId) return;
         setStartingShift(true);
         try {
             await driverDashboardApi.startShift({
-                shift_id: data!.shift_id!,
+                rental_id: data!.rental_id!,
                 vehicle_id: data!.vehicle!.id,
                 driver_id: driverId,
                 damage_markers: [],
@@ -190,6 +190,21 @@ export function DriverOperations() {
             alert('Failed to start shift');
         } finally {
             setStartingShift(false);
+        }
+    };
+
+    const handleEndShift = async () => {
+        if (!data?.shift_id) return;
+        if (!confirm('Are you sure you want to end your shift?')) return;
+        
+        setEndingShift(true);
+        try {
+            await driverDashboardApi.endShift(data.shift_id);
+            loadDashboard();
+        } catch (err) {
+            alert('Failed to end shift');
+        } finally {
+            setEndingShift(false);
         }
     };
 
@@ -207,14 +222,28 @@ export function DriverOperations() {
     };
 
     const handlePayInvoice = async (invoiceId: string) => {
+        const invoice = invoices.find(i => i.id === invoiceId);
+        if (!invoice || !driverId) return;
+
         setPayingInvoiceId(invoiceId);
-        await new Promise(resolve => setTimeout(resolve, 2500));
         try {
-            await api.post(`/api/invoices/${invoiceId}/pay`);
-            alert('Payment Successful! Thank you.');
-            loadDashboard();
+            const response = await api.post('/api/payments/create-checkout-session', {
+                amount: Math.round(invoice.amount * 100), // convert to cents
+                metadata: {
+                    driverId,
+                    invoiceId: invoice.id,
+                    type: 'INVOICE_PAYMENT'
+                }
+            });
+
+            if (response.data.url) {
+                window.location.href = response.data.url;
+            } else {
+                throw new Error('Failed to create checkout session');
+            }
         } catch (err) {
-            alert('Payment failed. Please try again.');
+            console.error('Payment error:', err);
+            alert('Failed to initiate payment. Please try again.');
         } finally {
             setPayingInvoiceId(null);
         }
@@ -222,27 +251,32 @@ export function DriverOperations() {
 
     const handleEmergencyCall = () => { window.location.href = 'tel:000'; };
 
-    const openDocument = async (docType: 'rego' | 'ctp' | 'pink-slip' | 'rental-agreement') => {
+    const openDocument = async (docType: string, docId?: string) => {
         if (!data?.vehicle) return;
-        if (docType === 'rental-agreement' && !data?.rental_id) {
-            alert('Rental agreement not available');
-            return;
-        }
-
+        
         setLoadingDocument(true);
         setShowDocumentModal(true);
         try {
-            const url = docType === 'rental-agreement'
-                ? `/api/documents/rental-agreement/${data.rental_id}`
-                : `/api/documents/${docType}/${data.vehicle.id}`;
+            let url = '';
+            if (docType === 'rental-agreement') {
+                url = `/api/documents/rental-agreement/${data.rental_id}`;
+            } else if (docType === 'vehicle-doc' && docId) {
+                url = `/api/documents/vehicle-doc/${docId}`;
+            } else {
+                url = `/api/documents/${docType}/${data.vehicle.id}`;
+            }
+            
             const response = await api.get(url);
             setCurrentDocument(response.data);
         } catch (err) {
+            console.error('Failed to load document:', err);
+            // Fallback for demo if API fails
             setCurrentDocument({
                 title: docType.charAt(0).toUpperCase() + docType.slice(1).replace('-', ' '),
                 status: 'Active',
                 expiryDate: '2025-12-31',
-                downloadUrl: docType === 'rental-agreement' ? '/docs/rental_agreement.pdf' : '/docs/sample_invoice.pdf'
+                details: { 'Notice': 'Physical document is in the vehicle glovebox.' },
+                downloadUrl: ''
             } as any);
         } finally {
             setLoadingDocument(false);
@@ -311,6 +345,47 @@ export function DriverOperations() {
                         <Car className="w-8 h-8 text-white" />
                     </div>
                     <p className="text-slate-500 font-medium">Loading your dashboard...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (data?.driver_status === 'PENDING_APPROVAL' || data?.driver_status === 'PENDING') {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-6 bg-slate-50">
+                <div className="text-center bg-white rounded-3xl shadow-xl shadow-slate-200/50 p-10 max-w-md border border-slate-100 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -mr-16 -mt-16"></div>
+                    <div className="w-24 h-24 mx-auto mb-6 rounded-3xl bg-amber-50 flex items-center justify-center shadow-inner relative z-10">
+                        <Clock className="w-12 h-12 text-amber-500 animate-pulse" />
+                    </div>
+                    <h2 className="text-2xl font-extrabold text-slate-900 mb-2 relative z-10">Application Pending</h2>
+                    <p className="text-slate-500 mb-8 leading-relaxed relative z-10">
+                        Your application is currently under review by our team. We'll notify you once you're cleared to start driving.
+                    </p>
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-left mb-8 relative z-10">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Next Steps</p>
+                        <ul className="space-y-2">
+                            <li className="flex items-start gap-2 text-sm text-slate-600">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5" />
+                                <span>VEVO Work Rights Verified</span>
+                            </li>
+                            <li className="flex items-start gap-2 text-sm text-slate-600">
+                                <Clock className="w-4 h-4 text-amber-500 mt-0.5" />
+                                <span>Admin Profile Review</span>
+                            </li>
+                            <li className="flex items-start gap-2 text-sm text-slate-600">
+                                <Clock className="w-4 h-4 text-amber-500 mt-0.5" />
+                                <span>Vehicle Assignment</span>
+                            </li>
+                        </ul>
+                    </div>
+                    <Button
+                        variant="outline"
+                        onClick={handleLogout}
+                        className="w-full border-slate-200 text-slate-600 rounded-xl py-6 font-semibold"
+                    >
+                        Sign Out
+                    </Button>
                 </div>
             </div>
         );
@@ -472,12 +547,12 @@ export function DriverOperations() {
                                             <Zap className="w-5 h-5 text-amber-500" />
                                             Shift Control
                                         </h3>
-                                        <p className="text-sm text-slate-500">
-                                            {data.shift_status === 'NOT_STARTED' ? 'Start your shift to begin tracking earnings and location.' : 'Your shift is currently active.'}
-                                        </p>
+                                         <p className="text-sm text-slate-500">
+                                             {data.shift_status === 'ACTIVE' ? 'Your shift is currently active.' : 'Start your shift to begin tracking earnings and location.'}
+                                         </p>
                                     </div>
 
-                                    {data.shift_status === 'NOT_STARTED' ? (
+                                    {data.shift_status === 'NOT_STARTED' || data.shift_status === 'ENDED' ? (
                                         <button
                                             onClick={handleStartShift}
                                             disabled={startingShift}
@@ -494,21 +569,38 @@ export function DriverOperations() {
                                             )}
                                         </button>
                                     ) : (
-                                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6 relative overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl"></div>
-                                            <div className="flex items-center gap-4 relative z-10">
-                                                <div className="w-14 h-14 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                                                    <Check className="w-7 h-7 text-white" />
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-emerald-900 text-lg">Shift Active</p>
-                                                    <p className="text-sm text-emerald-700 font-medium">
-                                                        {data.last_condition_report
-                                                            ? `Verified at ${new Date(data.last_condition_report).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`
-                                                            : 'Ready for trips'}
-                                                    </p>
+                                        <div className="space-y-4">
+                                            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-6 relative overflow-hidden">
+                                                <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl"></div>
+                                                <div className="flex items-center gap-4 relative z-10">
+                                                    <div className="w-14 h-14 rounded-xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                                                        <Check className="w-7 h-7 text-white" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-emerald-900 text-lg">Shift Active</p>
+                                                        <p className="text-sm text-emerald-700 font-medium">
+                                                            {data.last_condition_report
+                                                                ? `Verified at ${new Date(data.last_condition_report).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`
+                                                                : 'Ready for trips'}
+                                                        </p>
+                                                    </div>
                                                 </div>
                                             </div>
+
+                                            <button
+                                                onClick={handleEndShift}
+                                                disabled={endingShift}
+                                                className="w-full py-4 bg-white border-2 border-slate-200 hover:border-red-200 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-2xl font-bold transition-all duration-300 disabled:opacity-50 flex items-center justify-center gap-2"
+                                            >
+                                                {endingShift ? (
+                                                    <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                                                ) : (
+                                                    <>
+                                                        <ZapOff className="w-5 h-5" />
+                                                        End Shift
+                                                    </>
+                                                )}
+                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -628,40 +720,45 @@ export function DriverOperations() {
                             <Badge variant="secondary" className="rounded-lg">{data.vehicle_documents?.length || 0} docs</Badge>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="grid grid-cols-2 gap-3">
                             {[
-                                { id: 'rego', label: 'Registration', icon: FileText, color: 'blue' },
-                                { id: 'ctp', label: 'Insurance', icon: Shield, color: 'emerald' },
-                                { id: 'pink-slip', label: 'Safety Check', icon: CheckCircle2, color: 'rose' },
-                                { id: 'rental-agreement', label: 'Agreement', icon: User, color: 'amber' }
-                            ].map((doc) => (
-                                <button
-                                    key={doc.id}
-                                    onClick={() => openDocument(doc.id as any)}
-                                    className={`group p-4 bg-${doc.color}-50 rounded-2xl hover:bg-${doc.color}-100 transition-colors text-left border border-${doc.color}-100`}
-                                >
-                                    <doc.icon className={`w-5 h-5 text-${doc.color}-600 mb-2 group-hover:scale-110 transition-transform`} />
-                                    <p className={`font-semibold text-${doc.color}-900 text-sm leading-tight`}>{doc.label}</p>
-                                </button>
-                            ))}
+                                { id: 'rego', label: 'Registration', icon: FileText, color: 'blue', type: 'REGO' },
+                                { id: 'ctp', label: 'Insurance', icon: ShieldCheck, color: 'emerald', type: 'CTP' },
+                                { id: 'pink-slip', label: 'Safety Check', icon: BadgeCheck, color: 'rose', type: 'PINK_SLIP' },
+                                { id: 'rental-agreement', label: 'Agreement', icon: FileSignature, color: 'amber', type: 'RENTAL_AGREEMENT' }
+                            ].map((doc) => {
+                                const hasFile = data.vehicle_documents?.some(vd => vd.doc_type === doc.type);
+                                return (
+                                    <button
+                                        key={doc.id}
+                                        onClick={() => openDocument(doc.id as any)}
+                                        className="relative flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-slate-100 hover:border-primary/30 hover:bg-slate-50 transition-all group overflow-hidden"
+                                    >
+                                        <div className={`p-3 bg-${doc.color}-50 text-${doc.color}-600 rounded-xl mb-2 group-hover:scale-110 transition-transform`}>
+                                            <doc.icon className="w-6 h-6" />
+                                        </div>
+                                        <span className="text-xs font-bold text-slate-700">{doc.label}</span>
+                                        {hasFile && (
+                                            <div className="absolute top-1 right-1">
+                                                <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-sm" title="Digital copy available" />
+                                            </div>
+                                        )}
+                                    </button>
+                                );
+                            })}
                         </div>
 
-                        {/* Extra Documents */}
-                        {(data.vehicle_documents?.length ?? 0) > 0 && (
+                        {/* Extra Documents (only show types not already in placeholders) */}
+                        {data.vehicle_documents?.filter(doc => 
+                            !['REGO', 'CTP', 'PINK_SLIP', 'RENTAL_AGREEMENT'].includes(doc.doc_type)
+                        ).length! > 0 && (
                             <div className="mt-4 space-y-2">
-                                {data.vehicle_documents!.map(doc => (
+                                {data.vehicle_documents!
+                                    .filter(doc => !['REGO', 'CTP', 'PINK_SLIP', 'RENTAL_AGREEMENT'].includes(doc.doc_type))
+                                    .map(doc => (
                                     <div 
                                         key={doc.id} 
-                                        onClick={() => {
-                                            if (doc.file_url) {
-                                                const link = document.createElement('a');
-                                                link.href = doc.file_url;
-                                                link.download = doc.file_name || 'document.pdf';
-                                                document.body.appendChild(link);
-                                                link.click();
-                                                document.body.removeChild(link);
-                                            }
-                                        }}
+                                        onClick={() => openDocument('vehicle-doc', doc.id)}
                                         className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer border border-slate-100 group"
                                     >
                                         <div className="p-2 bg-white rounded-lg shadow-sm group-hover:bg-primary group-hover:text-white transition-colors">
@@ -727,11 +824,25 @@ export function DriverOperations() {
                                     )}
                                 </div>
                             </div>
-                            {currentDocument.downloadUrl && (
-                                <Button className="w-full h-12 rounded-xl text-md" onClick={() => window.open(currentDocument.downloadUrl, '_blank')}>
-                                    <Download className="w-4 h-4 mr-2" /> Download PDF
-                                </Button>
-                            )}
+                            <Button 
+                                className="w-full bg-slate-900 hover:bg-black text-white h-12 font-bold rounded-xl"
+                                onClick={() => {
+                                    if (currentDocument?.downloadUrl) {
+                                        const link = document.createElement('a');
+                                        link.href = currentDocument.downloadUrl;
+                                        link.target = '_blank';
+                                        link.download = `${currentDocument.title}.pdf`;
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                    } else {
+                                        alert('Digital copy coming soon! This document is physically in your vehicle glovebox.');
+                                    }
+                                }}
+                            >
+                                <Download className="w-4 h-4 mr-2" />
+                                Download Document
+                            </Button>
                         </div>
                     ) : (
                         <p className="text-center text-slate-500 py-8">Document details unavailable.</p>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Building2, Hash, Phone, Mail, MapPin, Pencil, Trash2, Check, X, BadgeCheck, Sparkles } from 'lucide-react';
+import { Plus, Building2, Hash, Phone, Mail, MapPin, Pencil, Trash2, X, BadgeCheck, Sparkles, CreditCard, User, Building } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -23,9 +23,27 @@ interface Business {
     email: string | null;
     is_active: boolean;
     created_at: string;
+    // Bank details
+    bank_name: string | null;
+    bank_bsb: string | null;
+    bank_account_number: string | null;
+    bank_account_name: string | null;
+    // Admin linking
+    admin_user_id: string | null;
+    admin_name: string | null;
 }
 
-const emptyForm = { name: '', abn: '', address: '', phone: '', email: '' };
+interface BankDetails {
+    bank_name: string;
+    bank_bsb: string;
+    bank_account_number: string;
+    bank_account_name: string;
+}
+
+const emptyForm: { name: string; abn: string; address: string; phone: string; email: string } & BankDetails = {
+    name: '', abn: '', address: '', phone: '', email: '',
+    bank_name: '', bank_bsb: '', bank_account_number: '', bank_account_name: ''
+};
 
 function formatAbn(abn: string | null): string {
     if (!abn) return '—';
@@ -89,6 +107,10 @@ export function BusinessSettings() {
             address: biz.address || '',
             phone: biz.phone || '',
             email: biz.email || '',
+            bank_name: biz.bank_name || '',
+            bank_bsb: biz.bank_bsb || '',
+            bank_account_number: biz.bank_account_number || '',
+            bank_account_name: biz.bank_account_name || '',
         });
         setDialogOpen(true);
     };
@@ -103,6 +125,10 @@ export function BusinessSettings() {
                 address: formData.address || null,
                 phone: formData.phone || null,
                 email: formData.email || null,
+                bank_name: formData.bank_name || null,
+                bank_bsb: formData.bank_bsb || null,
+                bank_account_number: formData.bank_account_number || null,
+                bank_account_name: formData.bank_account_name || null,
             };
             if (editingBusiness) {
                 await businessApi.update(editingBusiness.id, payload);
@@ -244,6 +270,18 @@ export function BusinessSettings() {
                                 </div>
                             </CardHeader>
                             <CardContent className="pt-0 space-y-3">
+                                {/* Admin Linked */}
+                                {(biz.admin_user_id || biz.admin_name) && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                                            <User className="w-3.5 h-3.5 text-purple-600" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-400">Linked Admin</p>
+                                            <p className="font-medium text-slate-700">{biz.admin_name || 'Admin User'}</p>
+                                        </div>
+                                    </div>
+                                )}
                                 {biz.abn && (
                                     <div className="flex items-center gap-2 text-sm">
                                         <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
@@ -277,6 +315,20 @@ export function BusinessSettings() {
                                             <MapPin className="w-3.5 h-3.5 text-amber-600" />
                                         </div>
                                         <span className="text-slate-600 text-xs leading-snug">{biz.address}</span>
+                                    </div>
+                                )}
+                                {/* Bank Details Display */}
+                                {(biz.bank_name || biz.bank_account_number) && (
+                                    <div className="flex items-center gap-2 text-sm">
+                                        <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                                            <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                                        </div>
+                                        <div>
+                                            <p className="text-xs text-slate-400">{biz.bank_name}</p>
+                                            <p className="font-mono font-semibold text-slate-700">
+                                                {biz.bank_account_number ? `••••${biz.bank_account_number.slice(-4)}` : ''}
+                                            </p>
+                                        </div>
                                     </div>
                                 )}
                                 {!biz.abn && !biz.phone && !biz.email && !biz.address && (
@@ -357,6 +409,56 @@ export function BusinessSettings() {
                                 />
                             </div>
                         </div>
+
+                        {/* Bank Details Section */}
+                        <div className="border-t border-slate-100 pt-4 mt-2">
+                            <div className="flex items-center gap-2 mb-3">
+                                <CreditCard className="w-4 h-4 text-emerald-600" />
+                                <Label className="text-sm font-semibold text-slate-700">Bank Details</Label>
+                                <Badge className="bg-emerald-50 text-emerald-600 border-0 text-[10px]">Optional</Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2 col-span-2">
+                                    <Label htmlFor="bank-name">Bank Name</Label>
+                                    <Input
+                                        id="bank-name"
+                                        placeholder="e.g. Commonwealth Bank"
+                                        value={formData.bank_name}
+                                        onChange={e => setFormData({ ...formData, bank_name: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="bank-bsb">BSB</Label>
+                                    <Input
+                                        id="bank-bsb"
+                                        placeholder="XXX-XXX"
+                                        value={formData.bank_bsb}
+                                        onChange={e => setFormData({ ...formData, bank_bsb: e.target.value })}
+                                        className="font-mono"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="bank-account">Account Number</Label>
+                                    <Input
+                                        id="bank-account"
+                                        placeholder="12345678"
+                                        value={formData.bank_account_number}
+                                        onChange={e => setFormData({ ...formData, bank_account_number: e.target.value })}
+                                        className="font-mono"
+                                    />
+                                </div>
+                                <div className="space-y-2 col-span-2">
+                                    <Label htmlFor="bank-account-name">Account Name</Label>
+                                    <Input
+                                        id="bank-account-name"
+                                        placeholder="Business Name Pty Ltd"
+                                        value={formData.bank_account_name}
+                                        onChange={e => setFormData({ ...formData, bank_account_name: e.target.value })}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         <DialogFooter>
                             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                                 Cancel

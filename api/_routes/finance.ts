@@ -1,33 +1,41 @@
 import { Router } from 'express';
 import { supabase } from '../_lib/supabase.js';
+import { AuthRequest, adminOnly } from '../_middleware/auth.js';
 
 const router = Router();
 
 // Get financial dashboard summary
-router.get('/dashboard', async (req, res) => {
-    try {
-        const { start_date, end_date } = req.query;
-        
-        // Default to last 30 days if no dates provided
-        const start = start_date ? new Date(start_date as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const end = end_date ? new Date(end_date as string) : new Date();
-        const periodDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) || 1;
+// SEC-09 FIX: Added authMiddleware and adminOnly
+router.get('/dashboard', adminOnly, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
 
-        const [
-            { data: paidInvoices },
-            { data: vehicles }
-        ] = await Promise.all([
-            supabase.from('invoices')
-                .select('amount')
-                .eq('status', 'PAID')
-                .gte('paid_at', start.toISOString())
-                .lte('paid_at', end.toISOString()),
-            supabase.from('vehicles')
-                .select('insurance_cost')
-                .in('status', ['AVAILABLE', 'RENTED'])
-        ]);
+ const { start_date, end_date } = req.query;
+
+ // Default to last 30 days if no dates provided
+ const start = start_date ? new Date(start_date as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+ const end = end_date ? new Date(end_date as string) : new Date();
+ const periodDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) || 1;
+
+ const [
+ { data: paidInvoices },
+ { data: vehicles }
+ ] = await Promise.all([
+ supabase.from('invoices')
+ .select('amount, tolls')
+ .eq('status', 'PAID')
+ .eq('business_id', businessId)
+ .gte('paid_at', start.toISOString())
+ .lte('paid_at', end.toISOString()),
+ supabase.from('vehicles')
+ .select('insurance_cost')
+ .eq('business_id', businessId)
+ .in('status', ['AVAILABLE', 'RENTED'])
+ ]);
 
         const totalIncome = (paidInvoices || []).reduce((sum, inv) => sum + Number(inv.amount), 0);
+        const totalTolls = (paidInvoices || []).reduce((sum, inv) => sum + Number(inv.tolls || 0), 0);
         
         // Calculate pro-rated insurance expenses for the period
         const totalAnnualInsurance = (vehicles || []).reduce((sum, v) => sum + Number(v.insurance_cost || 0), 0);
@@ -35,6 +43,7 @@ router.get('/dashboard', async (req, res) => {
 
         res.json({
             income: totalIncome,
+            tolls_total: totalTolls,
             expenses: totalExpenses,
             net_profit: totalIncome - totalExpenses,
             period_days: periodDays
@@ -45,22 +54,27 @@ router.get('/dashboard', async (req, res) => {
 });
 
 // Get insurance breakdown
-router.get('/insurance', async (req, res) => {
-    try {
-        const { data: vehicles, error } = await supabase
-            .from('vehicles')
-            .select(`
-                id,
-                plate,
-                make,
-                model,
-                insurance_cost,
-                rentals(
-                    status,
-                    driver:drivers(name)
-                )
-            `)
-            .in('status', ['AVAILABLE', 'RENTED']);
+// SEC-09 FIX: Added adminOnly
+router.get('/insurance', adminOnly, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
+ const { data: vehicles, error } = await supabase
+ .from('vehicles')
+ .select(`
+ id,
+ plate,
+ make,
+ model,
+ insurance_cost,
+ rentals(
+ status,
+ driver:drivers(name)
+ )
+ `)
+ .eq('business_id', businessId)
+ .in('status', ['AVAILABLE', 'RENTED']);
 
         if (error) throw error;
 

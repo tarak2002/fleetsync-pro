@@ -1,69 +1,84 @@
 import { Router } from 'express';
 import { supabase } from '../_lib/supabase.js';
 import { ComplianceService } from '../_services/ComplianceService.js';
+import { AuthRequest, adminOnly } from '../_middleware/auth.js';
 
 const router = Router();
 
-// Test route
-router.get('/test', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
-
+// SEC-16 FIX: All compliance routes now require authMiddleware + adminOnly
 // Get unresolved compliance alerts
-router.get('/alerts', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('alerts')
-      .select('*, vehicle:vehicles(plate)')
-      .eq('resolved', false)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    res.json(data);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+router.get('/alerts', adminOnly, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
+ const { data, error } = await supabase
+ .from('alerts')
+ .select('*, vehicle:vehicles(plate)')
+ .eq('business_id', businessId)
+ .eq('resolved', false)
+ .order('created_at', { ascending: false });
+ if (error) throw error;
+ res.json(data);
+ } catch (error: any) {
+ res.status(500).json({ error: error.message });
+ }
 });
 
 // Run compliance check
-router.post('/check', async (req, res) => {
-  try {
-    const results = await ComplianceService.checkExpiries();
-    res.json(results);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+router.post('/check', adminOnly, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
+ const results = await ComplianceService.checkExpiries(businessId);
+ res.json(results);
+ } catch (error: any) {
+ res.status(500).json({ error: error.message });
+ }
 });
 
 // Resolve an alert
-router.post('/alerts/:id/resolve', async (req, res) => {
-  try {
-    const result = await ComplianceService.resolveAlert(req.params.id);
-    res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+router.post('/alerts/:id/resolve', adminOnly, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
+ const result = await ComplianceService.resolveAlert(req.params.id, businessId);
+ res.json(result);
+ } catch (error: any) {
+ res.status(500).json({ error: error.message });
+ }
 });
 
 // Get upcoming expiries (frontend expectation)
-router.get('/upcoming-expiries', async (req, res) => {
-  try {
-    const data = await ComplianceService.getUpcomingExpiries();
-    // Transform to match the Expiry interface in Compliance.tsx
-    // Interface Expiry { vehicle_id: string; plate: string; upcoming_expiries: string[]; }
-    const formatted = data.map((v: any) => ({
-      vehicle_id: v.vehicleId,
-      plate: v.plate,
-      upcoming_expiries: v.upcomingExpiries
-    }));
-    res.json(formatted);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+router.get('/upcoming-expiries', adminOnly, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
+ const data = await ComplianceService.getUpcomingExpiries(businessId);
+ // Transform to match the Expiry interface in Compliance.tsx
+ // Interface Expiry { vehicle_id: string; plate: string; upcoming_expiries: string[]; }
+ const formatted = data.map((v: any) => ({
+ vehicle_id: v.vehicleId,
+ plate: v.plate,
+ upcoming_expiries: v.upcomingExpiries
+ }));
+ res.json(formatted);
+ } catch (error: any) {
+ res.status(500).json({ error: error.message });
+ }
 });
 
 // Historical/Legacy routes for compatibility
-router.get('/summary', async (req, res) => {
-  try {
-    const { data: vehicles, error } = await supabase.from('vehicles').select('rego_expiry, ctp_expiry, pink_slip_expiry');
-    if (error) throw error;
+router.get('/summary', adminOnly, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
+ const { data: vehicles, error } = await supabase.from('vehicles').select('rego_expiry, ctp_expiry, pink_slip_expiry').eq('business_id', businessId);
+ if (error) throw error;
 
     const now = new Date();
     const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);

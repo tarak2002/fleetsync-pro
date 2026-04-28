@@ -42,10 +42,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Health check
 app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'ok', 
-        timestamp: new Date().toISOString(), 
-        mode: 'supabase-migrated' 
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        mode: 'supabase-migrated'
     });
 });
 

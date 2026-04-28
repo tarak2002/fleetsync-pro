@@ -12,7 +12,7 @@ export class TollService {
         amount: number;
         location: string;
         provider_tx_id: string;
-    }) {
+    }, explicitBusinessId?: string) {
         try {
             // 1. Deduplication Check
             const { data: existingToll, error: checkError } = await supabase
@@ -48,6 +48,17 @@ export class TollService {
 
             const matchingRental = rentals?.[0];
             let assignedInvoiceId = null;
+            let businessId = explicitBusinessId || matchingRental?.business_id;
+
+            // If no businessId found yet, try to find the vehicle owner
+            if (!businessId) {
+                const { data: vehicle } = await supabase
+                    .from('vehicles')
+                    .select('business_id')
+                    .eq('plate', tollData.plate)
+                    .maybeSingle();
+                businessId = vehicle?.business_id;
+            }
 
             if (matchingRental && matchingRental.invoices && matchingRental.invoices.length > 0) {
                 // We have a driver and an open invoice to attach it to!
@@ -82,7 +93,8 @@ export class TollService {
                     amount: tollData.amount,
                     location: tollData.location,
                     provider_tx_id: tollData.provider_tx_id,
-                    invoice_id: assignedInvoiceId
+                    invoice_id: assignedInvoiceId,
+                    business_id: businessId
                 })
                 .select()
                 .single();
@@ -99,39 +111,69 @@ export class TollService {
 
     /**
      * Automated job to pull yesterday's tolls from Linkt.
+     * Note: In a true multi-tenant production env, this would need to iterate through all businesses 
+     * or use a global Linkt account that returns business mapping.
      */
     static async syncDailyTolls() {
         console.log('[Tolls] Starting Daily Linkt Sync...');
 
-        // --- MOCK LINKT API DATA IMPLEMENTATION --- 
-        const { data: rentedVehicles, error: vehicleError } = await supabase
-            .from('vehicles')
-            .select('plate')
-            .eq('status', 'RENTED')
-            .limit(3);
-
-        if (vehicleError) throw vehicleError;
-
+        // Fetch all businesses to sync for each
+        const { data: businesses } = await supabase.from('businesses').select('id');
         let processed = 0;
 
-        for (const vehicle of rentedVehicles || []) {
-            // Generate a fake toll event for yesterday
-            const tollDate = new Date();
-            tollDate.setDate(tollDate.getDate() - 1);
+        for (const biz of businesses || []) {
+            const { data: rentedVehicles } = await supabase
+                .from('vehicles')
+                .select('plate')
+                .eq('status', 'RENTED')
+                .eq('business_id', biz.id)
+                .limit(5);
 
-            const mockTollData = {
-                plate: vehicle.plate,
-                date: tollDate,
-                amount: parseFloat((Math.random() * 5 + 2).toFixed(2)), // Random $2 - $7
-                location: 'M2 Motorway Gantry 4',
-                provider_tx_id: `LINKT_${Date.now()}_${vehicle.plate}` // Unique Hash
-            };
+            for (const vehicle of rentedVehicles || []) {
+                const tollDate = new Date();
+                tollDate.setDate(tollDate.getDate() - 1);
 
-            await this.processTollEvent(mockTollData);
-            processed++;
+                const mockTollData = {
+                    plate: vehicle.plate,
+                    date: tollDate,
+                    amount: parseFloat((Math.random() * 5 + 2).toFixed(2)),
+                    location: 'M2 Motorway Gantry 4',
+                    provider_tx_id: `LINKT_${Date.now()}_${vehicle.plate}_${biz.id.slice(0,4)}`
+                };
+
+                await this.processTollEvent(mockTollData, biz.id);
+                processed++;
+            }
         }
 
         console.log(`[Tolls] Daily Sync Completed. Processed ${processed} new tolls.`);
         return processed;
+    }
+
+    /**
+     * Bulk process tolls from an external source (API/CSV).
+     */
+    static async processBatch(tolls: any[], explicitBusinessId?: string) {
+        let successCount = 0;
+        let skipCount = 0;
+
+        for (const toll of tolls) {
+            try {
+                const result = await this.processTollEvent({
+                    plate: toll.plate,
+                    date: new Date(toll.date),
+                    amount: Number(toll.amount),
+                    location: toll.location || 'Unknown',
+                    provider_tx_id: toll.provider_tx_id
+                }, explicitBusinessId);
+                
+                if (result) successCount++;
+                else skipCount++;
+            } catch (err) {
+                console.error(`[Tolls] Failed to process toll ${toll.provider_tx_id}:`, err);
+            }
+        }
+
+        return { successCount, skipCount };
     }
 }

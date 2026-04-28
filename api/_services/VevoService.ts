@@ -38,14 +38,15 @@ export class VevoService {
 
             console.log(`[VEVO Service] Sending SOAP request to B2B Gateway for passport: ${passportNumber}`);
 
-            const response = await fetch(DHA_B2B_ENDPOINT, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/xml;charset=UTF-8',
-                    'SOAPAction': '"http://www.diac.gov.au/vevo/b2b/CheckVisaStatus"'
-                },
-                body: soapRequest
-            });
+const response = await fetch(DHA_B2B_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/xml;charset=UTF-8',
+        'SOAPAction': '"http://www.diac.gov.au/vevo/b2b/CheckVisaStatus"'
+      },
+      body: soapRequest,
+      signal: AbortSignal.timeout(15000) // ARCH-05 FIX: 15s timeout for VEVO
+    });
 
             if (!response.ok) {
                 console.error(`[VEVO Service] Gateway error: HTTP ${response.status}`);

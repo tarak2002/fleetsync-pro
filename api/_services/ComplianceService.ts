@@ -1,21 +1,22 @@
 import { supabase } from '../_lib/supabase.js';
 
 export class ComplianceService {
-    /**
-     * Check all vehicle expiries and suspend non-compliant vehicles
-     * Creates alerts for admin notification
-     */
-    static async checkExpiries() {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+ /**
+ * Check all vehicle expiries and suspend non-compliant vehicles
+ * Creates alerts for admin notification
+ */
+ static async checkExpiries(businessId: string) {
+ const today = new Date();
+ today.setHours(0, 0, 0, 0);
 
-        // Get all active vehicles (AVAILABLE or RENTED)
-        const { data: vehicles, error: vError } = await supabase
-            .from('vehicles')
-            .select('*')
-            .in('status', ['AVAILABLE', 'RENTED']);
+ // Get all active vehicles (AVAILABLE or RENTED) for this business
+ const { data: vehicles, error: vError } = await supabase
+ .from('vehicles')
+ .select('*')
+ .eq('business_id', businessId)
+ .in('status', ['AVAILABLE', 'RENTED']);
 
-        if (vError) throw vError;
+ if (vError) throw vError;
 
         const results: any[] = [];
 
@@ -67,15 +68,16 @@ export class ComplianceService {
                         .eq('resolved', false)
                         .single();
 
-                    if (!existingAlert) {
-                        await supabase
-                            .from('alerts')
-                            .insert({
-                                type: issue.type,
-                                message: `${vehicle.plate}: ${issue.message}`,
-                                vehicle_id: vehicle.id
-                            });
-                    }
+if (!existingAlert) {
+ await supabase
+ .from('alerts')
+ .insert({
+ type: issue.type,
+ message: `${vehicle.plate}: ${issue.message}`,
+ vehicle_id: vehicle.id,
+ business_id: businessId
+ });
+ }
                 }
 
                 results.push({
@@ -94,53 +96,56 @@ export class ComplianceService {
         };
     }
 
-    /**
-     * Get all unresolved alerts
-     */
-    static async getUnresolvedAlerts() {
-        const { data, error } = await supabase
-            .from('alerts')
-            .select('*, vehicle:vehicles(plate)')
-            .eq('resolved', false)
-            .order('created_at', { ascending: false });
-        
-        if (error) throw error;
-        return data;
-    }
+/**
+ * Get all unresolved alerts
+ */
+ static async getUnresolvedAlerts(businessId: string) {
+ const { data, error } = await supabase
+ .from('alerts')
+ .select('*, vehicle:vehicles(plate)')
+ .eq('business_id', businessId)
+ .eq('resolved', false)
+ .order('created_at', { ascending: false });
 
-    /**
-     * Resolve an alert
-     */
-    static async resolveAlert(alertId: string) {
-        const { data, error } = await supabase
-            .from('alerts')
-            .update({
-                resolved: true,
-                resolved_at: new Date().toISOString()
-            })
-            .eq('id', alertId)
-            .select()
-            .single();
+ if (error) throw error;
+ return data;
+ }
 
-        if (error) throw error;
-        return data;
-    }
+/**
+ * Resolve an alert
+ */
+ static async resolveAlert(alertId: string, businessId: string) {
+ const { data, error } = await supabase
+ .from('alerts')
+ .update({
+ resolved: true,
+ resolved_at: new Date().toISOString()
+ })
+ .eq('id', alertId)
+ .eq('business_id', businessId)
+ .select()
+ .single();
 
-    /**
-     * Get upcoming expiries (within 30 days)
-     */
-    static async getUpcomingExpiries() {
-        const today = new Date();
-        const thirtyDaysFromNow = new Date();
-        thirtyDaysFromNow.setDate(today.getDate() + 30);
+ if (error) throw error;
+ return data;
+ }
 
-        const { data: vehicles, error } = await supabase
-            .from('vehicles')
-            .select('*')
-            .neq('status', 'SUSPENDED')
-            .or(`rego_expiry.lte.${thirtyDaysFromNow.toISOString()},ctp_expiry.lte.${thirtyDaysFromNow.toISOString()},pink_slip_expiry.lte.${thirtyDaysFromNow.toISOString()}`);
+/**
+ * Get upcoming expiries (within 30 days)
+ */
+ static async getUpcomingExpiries(businessId: string) {
+ const today = new Date();
+ const thirtyDaysFromNow = new Date();
+ thirtyDaysFromNow.setDate(today.getDate() + 30);
 
-        if (error) throw error;
+ const { data: vehicles, error } = await supabase
+ .from('vehicles')
+ .select('*')
+ .eq('business_id', businessId)
+ .neq('status', 'SUSPENDED')
+ .or(`rego_expiry.lte.${thirtyDaysFromNow.toISOString()},ctp_expiry.lte.${thirtyDaysFromNow.toISOString()},pink_slip_expiry.lte.${thirtyDaysFromNow.toISOString()}`);
+
+ if (error) throw error;
 
         return (vehicles || []).map(v => {
             const expiries: string[] = [];

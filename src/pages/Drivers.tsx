@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Search, Shield, Plus, UserCheck, UserX, Copy, Check } from 'lucide-react';
-import { Card, CardContent } from '../components/ui/card';
+import { Search, Shield, Plus, UserX, Copy, Check } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Badge } from '../components/ui/badge';
@@ -32,6 +31,7 @@ export function DriversPage() {
     const [copied, setCopied] = useState(false);
     const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
     const [approvingDriver, setApprovingDriver] = useState<any>(null);
+    const [error, setError] = useState('');
 
     useEffect(() => {
         dispatch(fetchDrivers());
@@ -49,25 +49,31 @@ export function DriversPage() {
             dispatch(fetchDrivers());
             setApprovingDriver(null);
         } catch (error: any) {
-            alert(error.response?.data?.error || 'Failed to approve driver');
+            setError(error.response?.data?.error || 'Failed to approve driver');
         } finally {
             setSubmitting(false);
         }
     };
 
     const handleBlock = async (id: string) => {
-        await driversApi.block(id);
-        dispatch(fetchDrivers());
+        try {
+            await driversApi.block(id);
+            dispatch(fetchDrivers());
+        } catch (error: any) {
+            setError(error.response?.data?.error || 'Failed to block driver');
+        }
     };
 
     const handleGenerateLink = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubmitting(true);
+        setError('');
         try {
             const response = await onboardingApi.generateLink(email);
             setGeneratedLink(response.data.link);
         } catch (error: any) {
-            alert(error.response?.data?.error || 'Failed to generate link');
+            const errorData = error.response?.data;
+            setError(errorData?.error || errorData?.message || 'Failed to generate link');
         } finally {
             setSubmitting(false);
         }
@@ -122,6 +128,11 @@ export function DriversPage() {
 
                         {!generatedLink ? (
                             <form onSubmit={handleGenerateLink} className="space-y-4">
+                                {error && (
+                                    <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg animate-in fade-in slide-in-from-top-1">
+                                        {error}
+                                    </div>
+                                )}
                                 <div className="space-y-2">
                                     <Label htmlFor="email">Driver Email</Label>
                                     <Input

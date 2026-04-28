@@ -3,7 +3,7 @@ import { financeApi } from '../lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { format } from 'date-fns';
-import { DollarSign, TrendingUp, TrendingDown, Shield } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Shield, Radar } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export function FinancePage() {
@@ -78,7 +78,7 @@ export function FinancePage() {
             </div>
 
             {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-4">
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Total Income</CardTitle>
@@ -87,6 +87,16 @@ export function FinancePage() {
                     <CardContent>
                         <div className="text-2xl font-bold text-emerald-600">{formatCurrency(dashboardData?.income || 0)}</div>
                         <p className="text-xs text-slate-500">From paid invoices</p>
+                    </CardContent>
+                </Card>
+                <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                        <CardTitle className="text-sm font-medium">Tolls Collected</CardTitle>
+                        <Radar className="h-4 w-4 text-blue-500" />
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-2xl font-bold text-blue-600">{formatCurrency(dashboardData?.tolls_total || 0)}</div>
+                        <p className="text-xs text-slate-500">Reimbursed by drivers</p>
                     </CardContent>
                 </Card>
                 <Card>

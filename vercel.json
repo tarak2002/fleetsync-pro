@@ -1,13 +1,27 @@
 {
-    "version": 2,
-    "rewrites": [
-        {
-            "source": "/api/(.*)",
-            "destination": "/api/index.ts"
-        },
-        {
-            "source": "/(.*)",
-            "destination": "/index.html"
-        }
-    ]
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/tolls",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/compliance",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/billing",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }

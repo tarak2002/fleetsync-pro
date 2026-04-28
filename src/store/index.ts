@@ -38,10 +38,25 @@ export interface Driver {
 
 export interface DashboardStats {
     vehicles: { total: number; byStatus: Record<string, number> };
-    drivers: { total: number; byStatus: Record<string, number> };
-    rentals: { active: number };
-    invoices: { pending: { count: number; total: number }; overdue: { count: number; total: number } };
+    drivers: { total: number; byStatus: Record<string, number>; list: { id: string; name: string; status: string }[] };
+    rentals: { active: number; total: number; thisWeek: number; thisMonth: number };
+    invoices: {
+        pending: { count: number; total: number };
+        overdue: { count: number; total: number };
+        paid: { count: number; total: number };
+    };
     alerts: number;
+    weeklyRevenue: number;
+    weeklyRevenueData: { name: string; revenue: number; cost: number }[];
+    recentRentals: {
+        id: string;
+        status: string;
+        start_date: string;
+        end_date: string | null;
+        weekly_rate: string;
+        driver: { name: string } | null;
+        vehicle: { make: string; model: string; plate: string } | null;
+    }[];
 }
 
 export interface Alert {
@@ -151,6 +166,7 @@ interface AuthUser {
     name?: string;
     role: string;
     driverId?: string;
+    businessId?: string;
 }
 
 interface AuthState {

@@ -27,7 +27,7 @@ router.post('/generate-link', async (req, res) => {
                 expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
                 used: false
             });
-            
+
         if (error) throw error;
         res.json({ link: `${process.env.CLIENT_URL}/onboard/${token}` });
     } catch (error: any) {

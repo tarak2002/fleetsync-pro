@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { supabase } from '../_lib/supabase.js';
-import { AuthRequest } from '../_middleware/auth.js';
+import { AuthRequest, authMiddleware } from '../_middleware/auth.js';
 
 const router = Router();
 
 // Dynamic document endpoint — serves vehicle docs from DB + legacy static docs
-router.get('/:type/:id', async (req: AuthRequest, res) => {
+router.get('/:type/:id', authMiddleware, async (req: AuthRequest, res) => {
     try {
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
         const { type, id } = req.params;
 
         if (['rego', 'ctp', 'pink-slip'].includes(type)) {
@@ -14,6 +17,7 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
                 .from('vehicles')
                 .select('*')
                 .eq('id', id)
+                .eq('business_id', businessId)
                 .single();
 
             if (error || !vehicle) return res.status(404).json({ error: 'Vehicle not found' });
@@ -25,7 +29,8 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
                 'pink-slip': 'PINK_SLIP',
             };
 
-            const { data: uploadedDocs } = await supabase
+            console.log(`[Docs] Fetching ${type} for vehicle ${id}`);
+            const { data: uploadedDocs, error: docError } = await supabase
                 .from('vehicle_documents')
                 .select('*')
                 .eq('vehicle_id', id)
@@ -33,13 +38,22 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
                 .order('created_at', { ascending: false })
                 .limit(1);
 
+            if (docError) console.error('[Docs] DB Error:', docError);
+
             const latestUpload = uploadedDocs?.[0];
+            console.log(`[Docs] Found upload:`, latestUpload?.name || 'None');
+            
             let downloadUrl: string | null = null;
 
             if (latestUpload?.file_url) {
-                const { data: signedData } = await supabase.storage
+                console.log(`[Docs] Generating signed URL for:`, latestUpload.file_url);
+                const { data: signedData, error: signedError } = await supabase.storage
                     .from('vehicle-documents')
                     .createSignedUrl(latestUpload.file_url, 3600);
+                
+                if (signedError) console.error('[Docs] Signed URL Error:', signedError);
+                console.log(`[Docs] Signed URL result:`, signedData?.signedUrl ? 'SUCCESS' : 'FAILED');
+                
                 downloadUrl = signedData?.signedUrl || null;
             }
 
@@ -93,12 +107,14 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
                 .from('rentals')
                 .select('*, driver:drivers(*), vehicle:vehicles(*)')
                 .eq('id', id)
+                .eq('business_id', businessId)
                 .single();
 
             if (error || !rental) return res.status(404).json({ error: 'Rental not found' });
 
+            console.log(`[Docs] Fetching rental agreement for rental ${id}`);
             // Check for uploaded rental agreement doc
-            const { data: uploadedDocs } = await supabase
+            const { data: uploadedDocs, error: docError } = await supabase
                 .from('vehicle_documents')
                 .select('*')
                 .eq('vehicle_id', rental.vehicle_id)
@@ -106,13 +122,22 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
                 .order('created_at', { ascending: false })
                 .limit(1);
 
+            if (docError) console.error('[Docs] Rental Doc DB Error:', docError);
+            
             const latestUpload = uploadedDocs?.[0];
+            console.log(`[Docs] Found rental upload:`, latestUpload?.name || 'None');
+
             let downloadUrl: string | null = null;
 
             if (latestUpload?.file_url) {
-                const { data: signedData } = await supabase.storage
+                console.log(`[Docs] Generating rental signed URL for:`, latestUpload.file_url);
+                const { data: signedData, error: signedError } = await supabase.storage
                     .from('vehicle-documents')
                     .createSignedUrl(latestUpload.file_url, 3600);
+                
+                if (signedError) console.error('[Docs] Rental Signed URL Error:', signedError);
+                console.log(`[Docs] Rental Signed URL result:`, signedData?.signedUrl ? 'SUCCESS' : 'FAILED');
+                
                 downloadUrl = signedData?.signedUrl || null;
             }
 
@@ -141,6 +166,8 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
 
         // Generic doc type from vehicle_documents table by document ID
         if (type === 'vehicle-doc') {
+            console.log(`[Docs] Fetching generic doc ${id}`);
+            // First get the doc to find vehicle_id
             const { data: doc, error } = await supabase
                 .from('vehicle_documents')
                 .select('*')
@@ -149,11 +176,26 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
 
             if (error || !doc) return res.status(404).json({ error: 'Document not found' });
 
+            // Verify vehicle belongs to business
+            const { data: vehicle } = await supabase
+                .from('vehicles')
+                .select('id')
+                .eq('id', doc.vehicle_id)
+                .eq('business_id', businessId)
+                .single();
+
+            if (!vehicle) return res.status(404).json({ error: 'Document not found' });
+
             let downloadUrl: string | null = null;
             if (doc.file_url) {
-                const { data: signedData } = await supabase.storage
+                console.log(`[Docs] Generating generic signed URL for:`, doc.file_url);
+                const { data: signedData, error: signedError } = await supabase.storage
                     .from('vehicle-documents')
                     .createSignedUrl(doc.file_url, 3600);
+                
+                if (signedError) console.error('[Docs] Generic Signed URL Error:', signedError);
+                console.log(`[Docs] Generic Signed URL result:`, signedData?.signedUrl ? 'SUCCESS' : 'FAILED');
+                
                 downloadUrl = signedData?.signedUrl || null;
             }
 
@@ -177,23 +219,35 @@ router.get('/:type/:id', async (req: AuthRequest, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
 // Get all documents for a vehicle (for glove box listing)
-router.get('/list/:vehicleId', async (req: AuthRequest, res) => {
-    try {
-        const { vehicleId } = req.params;
+router.get('/list/:vehicleId', authMiddleware, async (req: AuthRequest, res) => {
+ try {
+ const businessId = req.user?.businessId;
+ if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
 
-        const { data, error } = await supabase
-            .from('vehicle_documents')
-            .select('id, name, doc_type, file_name, file_size, expiry_date, created_at')
-            .eq('vehicle_id', vehicleId)
-            .order('created_at', { ascending: false });
+ const { vehicleId } = req.params;
 
-        if (error) throw error;
-        res.json(data || []);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
-    }
+ // Verify vehicle belongs to business
+ const { data: vehicle } = await supabase
+ .from('vehicles')
+ .select('id')
+ .eq('id', vehicleId)
+ .eq('business_id', businessId)
+ .single();
+
+ if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+
+ const { data, error } = await supabase
+ .from('vehicle_documents')
+ .select('id, name, doc_type, file_name, file_size, expiry_date, created_at')
+ .eq('vehicle_id', vehicleId)
+ .order('created_at', { ascending: false });
+
+ if (error) throw error;
+ res.json(data || []);
+ } catch (error: any) {
+ res.status(500).json({ error: error.message });
+ }
 });
 
 export default router;

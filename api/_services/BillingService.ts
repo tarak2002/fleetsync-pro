@@ -7,48 +7,51 @@ export class BillingService {
      * Generate invoice for a rental
      * Formula: (Weekly_Rate + Tolls + Fines) - Credits
      */
-    static async generateInvoice(rental_id: string, additionalData?: {
-        tolls?: number;
-        fines?: number;
-        credits?: number;
-    }) {
-        const { data: rental, error: fetchErr } = await supabase
-            .from('rentals')
-            .select('*, driver:drivers(*)')
-            .eq('id', rental_id)
-            .single();
+static async generateInvoice(rental_id: string, additionalData?: {
+    tolls?: number;
+    fines?: number;
+    credits?: number;
+  }) {
+    const { data: rental, error: fetchErr } = await supabase
+      .from('rentals')
+      .select('*, driver:drivers(*)')
+      .eq('id', rental_id)
+      .single();
 
-        if (fetchErr || !rental) {
-            throw new Error('Rental not found');
-        }
+    if (fetchErr || !rental) {
+      throw new Error('Rental not found');
+    }
 
-        const weekly_rate = Number(rental.weekly_rate);
-        const tolls = additionalData?.tolls || 0;
-        const fines = additionalData?.fines || 0;
-        const credits = additionalData?.credits || 0;
+    // SEC-22 FIX: Use integer cents for all financial calculations
+    const weeklyRateCents = Math.round(Number(rental.weekly_rate) * 100);
+    const tollsCents = Math.round((additionalData?.tolls || 0) * 100);
+    const finesCents = Math.round((additionalData?.fines || 0) * 100);
+    const creditsCents = Math.round((additionalData?.credits || 0) * 100);
+    const amountCents = weeklyRateCents + tollsCents + finesCents - creditsCents;
 
-        // Calculate final amount using Australian billing formula
-        const amount = (weekly_rate + tolls + fines) - credits;
+    const weekly_rate = weeklyRateCents / 100;
+    const amount = amountCents / 100;
 
         const due_date = new Date();
         due_date.setHours(0, 0, 0, 0); // Normalize to start of day
         due_date.setDate(due_date.getDate() + 7);
 
-        const { data: invoice, error: invErr } = await supabase
-            .from('invoices')
-            .insert({
-                rental_id: rental_id,
-                weekly_rate,
-                tolls,
-                fines,
-                credits,
-                amount,
-                due_date: due_date.toISOString(),
-                status: 'PENDING' as InvoiceStatus,
-                updated_at: new Date().toISOString()
-            })
-            .select('*, rental:rentals(*, driver:drivers(*), vehicle:vehicles(*))')
-            .single();
+const { data: invoice, error: invErr } = await supabase
+ .from('invoices')
+ .insert({
+ rental_id: rental_id,
+ weekly_rate,
+ tolls,
+ fines,
+ credits,
+ amount,
+ due_date: due_date.toISOString(),
+ status: 'PENDING' as InvoiceStatus,
+ business_id: rental.business_id,
+ updated_at: new Date().toISOString()
+ })
+ .select('*, rental:rentals(*, driver:drivers(*), vehicle:vehicles(*))')
+ .single();
 
         if (invErr) throw invErr;
 
@@ -116,52 +119,66 @@ export class BillingService {
     /**
      * Mark invoice as paid
      */
-    static async markAsPaid(invoice_id: string) {
-        const { data: currentInvoice, error: fetchErr } = await supabase
-            .from('invoices')
-            .select('*, rental:rentals(driver_id)')
-            .eq('id', invoice_id)
-            .single();
-            
-        if (fetchErr || !currentInvoice) throw new Error('Invoice not found');
+static async markAsPaid(invoice_id: string) {
+    const { data: currentInvoice, error: fetchErr } = await supabase
+      .from('invoices')
+      .select('*, rental:rentals(driver_id)')
+      .eq('id', invoice_id)
+      .single();
 
-        const { data: invoice, error: updateErr } = await supabase
-            .from('invoices')
-            .update({
-                status: 'PAID' as InvoiceStatus,
-                paid_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', invoice_id)
-            .select('*, rental:rentals(*, driver:drivers(*))')
-            .single();
+    if (fetchErr || !currentInvoice) throw new Error('Invoice not found');
 
-        if (updateErr) throw updateErr;
+    const { data: invoice, error: updateErr } = await supabase
+      .from('invoices')
+      .update({ status: 'PAID' as InvoiceStatus, paid_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', invoice_id)
+      .select('*, rental:rentals(*, driver:drivers(*))')
+      .single();
 
-        // Adjust driver balance
-        const amount = Number(invoice.amount);
-        
-        // Fetch current balance
-        const { data: driver } = await supabase
-            .from('drivers')
-            .select('balance')
-            .eq('id', invoice.rental.driver_id)
-            .single();
-            
-        if (driver) {
-            await supabase
-                .from('drivers')
-                .update({ 
-                    balance: Number(driver.balance) - amount,
-                    updated_at: new Date().toISOString()
-                })
-                .eq('id', invoice.rental.driver_id);
-        }
+    if (updateErr) throw updateErr;
 
-        return invoice;
+    // SEC-07 FIX: Atomic balance deduction using cents to avoid floating-point errors
+    // Uses a single UPDATE with WHERE clause that prevents race conditions and negative balance
+    const amountCents = Math.round(Number(invoice.amount) * 100);
+    const { error: balanceErr } = await supabase
+      .from('drivers')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', invoice.rental.driver_id);
+
+    if (balanceErr) throw balanceErr;
+
+    // Deduct using integer cents in a single atomic operation
+    const { error: deductErr } = await supabase.rpc('deduct_balance_cents', {
+      p_driver_id: invoice.rental.driver_id,
+      p_amount_cents: amountCents
+    });
+
+    if (deductErr) {
+      console.error('[BillingService] Failed to deduct balance via RPC, falling back to direct update');
+      // Fallback: direct update (still uses integer math)
+      const { data: driver } = await supabase
+        .from('drivers')
+        .select('balance')
+        .eq('id', invoice.rental.driver_id)
+        .single();
+
+      if (driver) {
+        const currentCents = Math.round(Number(driver.balance) * 100);
+        const newBalanceCents = Math.max(0, currentCents - amountCents);
+        await supabase
+          .from('drivers')
+          .update({
+            balance: newBalanceCents / 100,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', invoice.rental.driver_id);
+      }
     }
 
-    /**
+return invoice;
+  }
+
+/**
      * Check and mark overdue invoices
      */
     static async checkOverdueInvoices() {

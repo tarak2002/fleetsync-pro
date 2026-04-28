@@ -35,7 +35,7 @@ export function InvoicesPage() {
         setLoading(true);
         setError(null);
         try {
-            const response = await invoicesApi.getAll(filter === 'all' ? undefined : { status: filter });
+            const response = await invoicesApi.getAll({ status: filter });
             setInvoices(response.data);
         } catch (err) {
             console.error(err);
@@ -76,9 +76,27 @@ export function InvoicesPage() {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <div>
-                <h1 className="text-2xl font-bold text-slate-800">Invoices</h1>
-                <p className="text-slate-500">Billing and payment tracking</p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-800">Invoices</h1>
+                    <p className="text-slate-500">Billing and payment tracking</p>
+                </div>
+                <Button
+                    onClick={async () => {
+                        try {
+                            setLoading(true);
+                            await invoicesApi.runBillingCycle();
+                            await loadInvoices();
+                        } catch (err: any) {
+                            setError(err?.response?.data?.error || 'Failed to generate invoices.');
+                            setLoading(false);
+                        }
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white gap-2"
+                >
+                    <Loader2 className={`w-4 h-4 ${loading ? 'animate-spin' : 'hidden'}`} />
+                    Generate Invoices
+                </Button>
             </div>
 
             <div className="flex gap-2">

@@ -59,7 +59,9 @@ export const authApi = {
     logout: async () => {
         const { error } = await supabase.auth.signOut();
         if (error) throw error;
-    }
+    },
+    setupBusiness: (data: { name: string; abn?: string; address: string; phone: string }) => 
+        api.post('/api/auth/setup-business', data),
 };
 
 export const vehiclesApi = {
@@ -123,18 +125,20 @@ export const analyticsApi = {
 export const onboardingApi = {
     generateLink: (email: string) => api.post('/api/onboarding/generate-link', { email }),
     validate: (token: string) => api.get(`/api/onboarding/validate/${token}`),
-    verify: (passportNo: string) => api.post('/api/onboarding/verify', { passportNo }),
+    submitApplication: (token: string, data: any) => api.post('/api/onboarding/submit', { token, data }),
 };
 
 export const driverDashboardApi = {
     getActiveRental: (driverId: string) =>
         api.get('/api/driver/dashboard/active-rental', { params: { driver_id: driverId } }),
-    startShift: (data: { shift_id: string; vehicle_id: string; driver_id: string; damage_markers: any[]; notes: string; photos: string[] }) =>
+    startShift: (data: { rental_id: string; vehicle_id: string; driver_id: string; damage_markers: any[]; notes: string; photos: string[] }) =>
         api.post('/api/driver/dashboard/start-shift', data),
     endShift: (shiftId: string) =>
         api.post('/api/driver/dashboard/end-shift', { shift_id: shiftId }),
     returnVehicle: (data: { rental_id: string; shift_id?: string }) =>
         api.post('/api/driver/dashboard/return-vehicle', data),
+    getShifts: (driverId?: string) =>
+        api.get('/api/driver/dashboard/shifts', { params: { driver_id: driverId } }),
     reportAccident: (data: any) =>
         api.post('/api/driver/dashboard/accident-report', data),
 };
@@ -142,10 +146,29 @@ export const driverDashboardApi = {
 export const businessApi = {
     getAll: () => api.get('/api/businesses'),
     getById: (id: string) => api.get(`/api/businesses/${id}`),
-    create: (data: { name?: string; abn?: string; address?: string; phone?: string; email?: string }) =>
-        api.post('/api/businesses', data),
-    update: (id: string, data: Partial<{ name: string; abn: string; address: string; phone: string; email: string; is_active: boolean }>) =>
-        api.patch(`/api/businesses/${id}`, data),
+    create: (data: {
+        name?: string;
+        abn?: string | null;
+        address?: string | null;
+        phone?: string | null;
+        email?: string | null;
+        bank_name?: string | null;
+        bank_bsb?: string | null;
+        bank_account_number?: string | null;
+        bank_account_name?: string | null;
+    }) => api.post('/api/businesses', data),
+    update: (id: string, data: Partial<{
+        name: string;
+        abn: string | null;
+        address: string | null;
+        phone: string | null;
+        email: string | null;
+        is_active: boolean;
+        bank_name?: string | null;
+        bank_bsb?: string | null;
+        bank_account_number?: string | null;
+        bank_account_name?: string | null;
+    }>) => api.patch(`/api/businesses/${id}`, data),
     delete: (id: string) => api.delete(`/api/businesses/${id}`),
     getVehicleDocs: (vehicleId: string) => api.get(`/api/businesses/vehicle-docs/${vehicleId}`),
     uploadVehicleDoc: (vehicleId: string, formData: FormData) =>
@@ -158,3 +181,29 @@ export const businessApi = {
         api.get(`/api/businesses/vehicle-docs/${vehicleId}/${docId}/download`),
     listVehicleDocs: (vehicleId: string) => api.get(`/api/documents/list/${vehicleId}`),
 };
+
+export const paymentsApi = {
+    getSetupIntent: () => api.get('/api/payments/setup-intent'),
+};
+
+export const argyleApi = {
+    /**
+     * Creates (or retrieves) an Argyle user_token for this driver.
+     * The token is passed to the Argyle Link pop-up to securely authenticate the connection.
+     */
+    getUserToken: (driverId: string) =>
+        api.post('/api/argyle/create-user-token', { driverId }),
+
+    /**
+     * Fetches this driver's Argyle-synced earnings + DB history.
+     */
+    getMyEarnings: (driverId: string) =>
+        api.get('/api/argyle/my-earnings', { params: { driver_id: driverId } }),
+};
+
+export const tollsApi = {
+    getAll: () => api.get('/api/tolls'),
+    getUnprocessed: () => api.get('/api/tolls/unprocessed'),
+    sync: (tolls: any[]) => api.post('/api/tolls/sync', { tolls }),
+};
+

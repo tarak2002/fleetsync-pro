@@ -9,23 +9,51 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 
 // ============ BUSINESS CRUD ============
 
-// Get all businesses
-router.get('/', adminOnly, async (req, res) => {
+// Get all businesses the user has access to (wrapped in array for UI compatibility)
+router.get('/', adminOnly, async (req: AuthRequest, res) => {
     try {
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.json([]);
+
         const { data, error } = await supabase
             .from('businesses')
             .select('*')
-            .order('created_at', { ascending: false });
+            .eq('id', businessId);
+
         if (error) throw error;
+        res.json(data || []);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get current business details
+router.get('/my-business', adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.status(404).json({ error: 'No business linked to this account' });
+
+        const { data, error } = await supabase
+            .from('businesses')
+            .select('*')
+            .eq('id', businessId)
+            .single();
+
+        if (error || !data) return res.status(404).json({ error: 'Business not found' });
         res.json(data);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// Get business by ID
-router.get('/:id', adminOnly, async (req, res) => {
+// Get business by ID (Strictly limited to own business unless super-admin)
+router.get('/:id', adminOnly, async (req: AuthRequest, res) => {
     try {
+        const businessId = req.user?.businessId;
+        if (businessId && businessId !== req.params.id) {
+            return res.status(403).json({ error: 'Access denied to this business' });
+        }
+
         const { data, error } = await supabase
             .from('businesses')
             .select('*')
@@ -38,34 +66,11 @@ router.get('/:id', adminOnly, async (req, res) => {
     }
 });
 
-// Create a business
-router.post('/', adminOnly, async (req, res) => {
+// Update business by ID
+router.patch('/:id', adminOnly, async (req: AuthRequest, res) => {
     try {
-        const { name, abn, address, phone, email } = req.body;
-        const { data, error } = await supabase
-            .from('businesses')
-            .insert({
-                id: uuidv4(),
-                name: name || 'Untitled Business',
-                abn: abn || null,
-                address: address || null,
-                phone: phone || null,
-                email: email || null,
-                updated_at: new Date().toISOString(),
-            })
-            .select()
-            .single();
-        if (error) throw error;
-        res.status(201).json(data);
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
-    }
-});
+        const { name, abn, address, phone, email, is_active, bank_name, bank_bsb, bank_account_number, bank_account_name, admin_user_id, admin_name } = req.body;
 
-// Update a business
-router.patch('/:id', adminOnly, async (req, res) => {
-    try {
-        const { name, abn, address, phone, email, is_active } = req.body;
         const { data, error } = await supabase
             .from('businesses')
             .update({
@@ -75,6 +80,12 @@ router.patch('/:id', adminOnly, async (req, res) => {
                 ...(phone !== undefined && { phone }),
                 ...(email !== undefined && { email }),
                 ...(is_active !== undefined && { is_active }),
+                ...(bank_name !== undefined && { bank_name }),
+                ...(bank_bsb !== undefined && { bank_bsb }),
+                ...(bank_account_number !== undefined && { bank_account_number }),
+                ...(bank_account_name !== undefined && { bank_account_name }),
+                ...(admin_user_id !== undefined && { admin_user_id }),
+                ...(admin_name !== undefined && { admin_name }),
                 updated_at: new Date().toISOString(),
             })
             .eq('id', req.params.id)
@@ -87,30 +98,31 @@ router.patch('/:id', adminOnly, async (req, res) => {
     }
 });
 
-// Delete a business
-router.delete('/:id', adminOnly, async (req, res) => {
+// Update current business
+router.patch('/my-business', adminOnly, async (req: AuthRequest, res) => {
     try {
-        const { error } = await supabase
-            .from('businesses')
-            .delete()
-            .eq('id', req.params.id);
-        if (error) throw error;
-        res.json({ success: true });
-    } catch (error: any) {
-        res.status(500).json({ error: error.message });
-    }
-});
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.status(400).json({ error: 'No business linked to this account' });
 
-// ============ VEHICLE DOCUMENTS PER BUSINESS ============
-
-// Get all documents for a vehicle
-router.get('/vehicle-docs/:vehicleId', adminOnly, async (req, res) => {
-    try {
+        const { name, abn, address, phone, email, is_active, bank_name, bank_bsb, bank_account_number, bank_account_name } = req.body;
         const { data, error } = await supabase
-            .from('vehicle_documents')
-            .select('*')
-            .eq('vehicle_id', req.params.vehicleId)
-            .order('created_at', { ascending: false });
+            .from('businesses')
+            .update({
+                ...(name !== undefined && { name }),
+                ...(abn !== undefined && { abn }),
+                ...(address !== undefined && { address }),
+                ...(phone !== undefined && { phone }),
+                ...(email !== undefined && { email }),
+                ...(is_active !== undefined && { is_active }),
+                ...(bank_name !== undefined && { bank_name }),
+                ...(bank_bsb !== undefined && { bank_bsb }),
+                ...(bank_account_number !== undefined && { bank_account_number }),
+                ...(bank_account_name !== undefined && { bank_account_name }),
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', businessId)
+            .select()
+            .single();
         if (error) throw error;
         res.json(data);
     } catch (error: any) {
@@ -118,15 +130,59 @@ router.get('/vehicle-docs/:vehicleId', adminOnly, async (req, res) => {
     }
 });
 
-// Upload a document for a vehicle
+// ============ VEHICLE DOCUMENTS PER BUSINESS ============
+
+// Get all documents for a vehicle (Verified Ownership)
+router.get('/vehicle-docs/:vehicleId', adminOnly, async (req: AuthRequest, res) => {
+    try {
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
+        // 1. Verify vehicle belongs to business
+        const { data: vehicle, error: vError } = await supabase
+            .from('vehicles')
+            .select('id')
+            .eq('id', req.params.vehicleId)
+            .eq('business_id', businessId)
+            .single();
+
+        if (vError || !vehicle) return res.status(403).json({ error: 'Access denied to this vehicle' });
+
+        const { data, error } = await supabase
+            .from('vehicle_documents')
+            .select('*')
+            .eq('vehicle_id', req.params.vehicleId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        res.json(data);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Upload a document for a vehicle (Verified Ownership)
 router.post('/vehicle-docs/:vehicleId/upload', adminOnly, upload.single('file'), async (req: AuthRequest, res) => {
     try {
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
         const { vehicleId } = req.params;
         const { name, doc_type, expiry_date, notes } = req.body;
         const file = req.file;
 
         if (!file) return res.status(400).json({ error: 'No file provided' });
         if (!name) return res.status(400).json({ error: 'Document name is required' });
+
+        // 1. Verify vehicle belongs to business
+        const { data: vehicle, error: vError } = await supabase
+            .from('vehicles')
+            .select('id')
+            .eq('id', vehicleId)
+            .eq('business_id', businessId)
+            .single();
+
+        if (vError || !vehicle) return res.status(403).json({ error: 'Access denied to this vehicle' });
 
         const fileExt = file.originalname.split('.').pop();
         const filePath = `${vehicleId}/${uuidv4()}.${fileExt}`;
@@ -141,7 +197,6 @@ router.post('/vehicle-docs/:vehicleId/upload', adminOnly, upload.single('file'),
 
         if (storageError) throw storageError;
 
-        // Get the public/signed URL (private bucket, so we store the path and generate signed URLs on demand)
         const docId = uuidv4();
         const { data, error: dbError } = await supabase
             .from('vehicle_documents')
@@ -150,13 +205,14 @@ router.post('/vehicle-docs/:vehicleId/upload', adminOnly, upload.single('file'),
                 vehicle_id: vehicleId,
                 name,
                 doc_type: doc_type || 'OTHER',
-                file_url: filePath, // Store the storage path
+                file_url: filePath,
                 file_name: file.originalname,
                 file_size: file.size,
                 mime_type: file.mimetype,
                 expiry_date: expiry_date || null,
                 notes: notes || null,
                 uploaded_by: req.user?.id || null,
+                business_id: businessId, // Ensure doc is linked to business
                 updated_at: new Date().toISOString(),
             })
             .select()
@@ -169,20 +225,24 @@ router.post('/vehicle-docs/:vehicleId/upload', adminOnly, upload.single('file'),
     }
 });
 
-// Delete a vehicle document
-router.delete('/vehicle-docs/:vehicleId/:docId', adminOnly, async (req, res) => {
+// Delete a vehicle document (Verified Ownership)
+router.delete('/vehicle-docs/:vehicleId/:docId', adminOnly, async (req: AuthRequest, res) => {
     try {
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
         const { vehicleId, docId } = req.params;
 
-        // Get doc to find storage path
+        // Verify document belongs to business
         const { data: doc, error: fetchErr } = await supabase
             .from('vehicle_documents')
             .select('file_url')
             .eq('id', docId)
             .eq('vehicle_id', vehicleId)
+            .eq('business_id', businessId)
             .single();
 
-        if (fetchErr || !doc) return res.status(404).json({ error: 'Document not found' });
+        if (fetchErr || !doc) return res.status(404).json({ error: 'Document not found or access denied' });
 
         // Delete from storage
         if (doc.file_url) {
@@ -202,9 +262,12 @@ router.delete('/vehicle-docs/:vehicleId/:docId', adminOnly, async (req, res) => 
     }
 });
 
-// Get signed download URL for a doc
-router.get('/vehicle-docs/:vehicleId/:docId/download', async (req: AuthRequest, res) => {
+// Get signed download URL for a doc (Verified Ownership)
+router.get('/vehicle-docs/:vehicleId/:docId/download', adminOnly, async (req: AuthRequest, res) => {
     try {
+        const businessId = req.user?.businessId;
+        if (!businessId) return res.status(400).json({ error: 'Business ID not found' });
+
         const { vehicleId, docId } = req.params;
 
         const { data: doc, error } = await supabase
@@ -212,9 +275,10 @@ router.get('/vehicle-docs/:vehicleId/:docId/download', async (req: AuthRequest, 
             .select('*')
             .eq('id', docId)
             .eq('vehicle_id', vehicleId)
+            .eq('business_id', businessId)
             .single();
 
-        if (error || !doc) return res.status(404).json({ error: 'Document not found' });
+        if (error || !doc) return res.status(404).json({ error: 'Document not found or access denied' });
 
         const { data: signedData, error: signErr } = await supabase.storage
             .from('vehicle-documents')

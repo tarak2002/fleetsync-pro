@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Search, Plus, MoreVertical, FileText, Upload, Trash2, Download, X, Building2 } from 'lucide-react';
+import { Search, Plus, FileText, Upload, Trash2, Download, Building2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -11,6 +11,7 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
+    DialogDescription,
     DialogFooter,
     DialogTrigger,
 } from '../components/ui/dialog';
@@ -70,6 +71,7 @@ export function FleetPage() {
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState('');
     const [businesses, setBusinesses] = useState<Business[]>([]);
 
     // Doc management modal state
@@ -141,7 +143,12 @@ export function FleetPage() {
             });
             dispatch(fetchVehicles());
         } catch (error: any) {
-            alert(error.response?.data?.error || 'Failed to create vehicle');
+            const errorData = error.response?.data;
+            if (errorData?.errors && Array.isArray(errorData.errors)) {
+                setError(errorData.errors.map((e: any) => e.msg).join(', '));
+            } else {
+                setError(errorData?.error || 'Failed to create vehicle');
+            }
         } finally {
             setSubmitting(false);
         }
@@ -151,6 +158,7 @@ export function FleetPage() {
     const openDocsModal = async (vehicleId: string, plate: string) => {
         setDocsVehicleId(vehicleId);
         setDocsVehiclePlate(plate);
+        setError('');
         setDocsLoading(true);
         try {
             const res = await businessApi.getVehicleDocs(vehicleId);
@@ -161,7 +169,7 @@ export function FleetPage() {
 
     const handleUpload = async () => {
         if (!docsVehicleId || !uploadFile || !uploadForm.name) {
-            alert('Please fill in the document name and select a file.');
+            setError('Please fill in the document name and select a file.');
             return;
         }
         setUploading(true);
@@ -180,7 +188,7 @@ export function FleetPage() {
             const res = await businessApi.getVehicleDocs(docsVehicleId);
             setVehicleDocs(res.data);
         } catch (err: any) {
-            alert(err.response?.data?.error || 'Upload failed');
+            setError(err.response?.data?.error || 'Upload failed');
         } finally {
             setUploading(false);
         }
@@ -191,7 +199,7 @@ export function FleetPage() {
         try {
             const res = await businessApi.getDocDownloadUrl(docsVehicleId, doc.id);
             window.open(res.data.url, '_blank');
-        } catch { alert('Failed to get download URL'); }
+        } catch { setError('Failed to get download URL'); }
     };
 
     const handleDeleteDoc = async (docId: string) => {
@@ -200,7 +208,7 @@ export function FleetPage() {
         try {
             await businessApi.deleteVehicleDoc(docsVehicleId, docId);
             setVehicleDocs(prev => prev.filter(d => d.id !== docId));
-        } catch { alert('Failed to delete document'); }
+        } catch { setError('Failed to delete document'); }
     };
 
     const filteredVehicles = vehicles.filter(v => {
@@ -231,8 +239,17 @@ export function FleetPage() {
                     <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                         <DialogHeader>
                             <DialogTitle>Add New Vehicle</DialogTitle>
+                            <DialogDescription className="sr-only">
+                                Fill in the details below to register a new vehicle to your fleet.
+                            </DialogDescription>
                         </DialogHeader>
                         <form onSubmit={handleSubmit} className="space-y-4">
+                            {error && (
+                                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm animate-shake">
+                                    {error}
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="vin">VIN</Label>
