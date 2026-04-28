@@ -173,10 +173,10 @@ router.get('/me', async (req: AuthRequest, res) => {
       .single();
 
     if (existingUser) {
-      const driverId = Array.isArray(existingUser.drivers) 
-        ? existingUser.drivers[0]?.id 
+      const driverId = Array.isArray(existingUser.drivers)
+        ? existingUser.drivers[0]?.id
         : (existingUser.drivers as any)?.id;
-        
+
       return res.json({
         ...existingUser,
         driverId: driverId || null,
@@ -187,14 +187,24 @@ router.get('/me', async (req: AuthRequest, res) => {
     // Create user if not found (first login via Supabase Auth)
     // SEC-FIX: Default new signups to ADMIN (business owners), not DRIVER
     // Drivers are invited, not self-registered. Check user metadata for explicit role.
-    const roleFromMetadata = user.user_metadata?.role as string;
+
+    // Get the role from Supabase user metadata
+    // In signup, we set role: 'ADMIN' in user metadata
+    let roleFromMetadata = 'ADMIN'; // Safe default for new signups
+
+    // If the request has the user_metadata available, use it
+    // Otherwise, default to ADMIN (safest assumption for new registrations)
+    if ((req as any).supabaseUserMetadata?.role) {
+      roleFromMetadata = (req as any).supabaseUserMetadata.role;
+    }
+
     const { data: newUser, error } = await supabase
       .from('users')
       .insert({
         id: req.user.id,
         email: req.user.email,
         name: req.user.name || 'User',
-        role: roleFromMetadata || 'ADMIN',
+        role: roleFromMetadata,
         updated_at: new Date().toISOString(),
       })
       .select('*, drivers(id, status)')
@@ -202,8 +212,8 @@ router.get('/me', async (req: AuthRequest, res) => {
 
     if (error) throw error;
 
-    const newDriverId = Array.isArray(newUser.drivers) 
-      ? newUser.drivers[0]?.id 
+    const newDriverId = Array.isArray(newUser.drivers)
+      ? newUser.drivers[0]?.id
       : (newUser.drivers as any)?.id;
 
     res.json({

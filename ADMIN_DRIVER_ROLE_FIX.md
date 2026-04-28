@@ -133,10 +133,20 @@ User signup → Creates as ADMIN → Redirected to /setup-business → Can setup
 
 ## 🧪 Testing the Fix
 
+### IMPORTANT: Fix Existing Test Users
+
+If you tested before the fix was applied, your test user is still in the database as DRIVER. Run the migration script:
+
+```bash
+npx tsx scripts/fix-admin-driver-roles.ts
+```
+
+This will update any users that have a business_id but are marked as DRIVER (they should be ADMIN).
+
 ### Test Case 1: New Admin Signup
 ```
-1. Go to /
-2. Sign up with new email
+1. Go to / (or /signup)
+2. Sign up with a FRESH email address (not used before)
 3. Should redirect to /setup-business (not /dashboard/operations)
 4. Check: User role should be 'ADMIN' in database
 ```

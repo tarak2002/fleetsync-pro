@@ -12,14 +12,13 @@
 # Error details
 
 ```
-Error: page.click: Target page, context or browser has been closed
+Error: page.fill: Target page, context or browser has been closed
 Call log:
-  - waiting for locator('button:has-text("Complete Business Setup")')
-    - locator resolved to <button type="submit" class="whitespace-nowrap ring-offset-white duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 px-4 py-2 w-full h-16 rounded-[20px] bg-slate-900 hover:bg-slate-800 text-white font-black text-lg transition-all shadow-xl shadow-slate-200 hover:shadow-2xl hover:shadow-slate-300 flex items-center justify-cent…>…</button>
-  - attempting click action
-    - waiting for element to be visible, enabled and stable
-    - element is visible, enabled and stable
-    - scrolling into view if needed
+  - waiting for locator('input[placeholder="123 Fleet St, Sydney NSW 2000"]')
+    - locator resolved to <input value="" required="" placeholder="123 Fleet St, Sydney NSW 2000" class="flex w-full border px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 h-14 pl-11 bg-slate-50/50 border-slate-200 rounded-2xl focus:bg-white focus:ring-primary/10 focus:border-primary transition-all …/>
+    - fill("1 Test St, Sydney NSW 2000")
+  - attempting fill action
+    - waiting for element to be visible, enabled and editable
   - element was detached from the DOM, retrying
 
 ```
@@ -99,11 +98,11 @@ Call log:
   70  |     // ========================================
   71  |     console.log('🏢 STEP 2: Admin sets up business...');
   72  |     await adminPage.fill(SELECTORS.businessSetup.nameInput, businessName);
-  73  |     await adminPage.fill(SELECTORS.businessSetup.addressInput, '1 Test St, Sydney NSW 2000');
+> 73  |     await adminPage.fill(SELECTORS.businessSetup.addressInput, '1 Test St, Sydney NSW 2000');
+      |                     ^ Error: page.fill: Target page, context or browser has been closed
   74  |     await adminPage.fill(SELECTORS.businessSetup.phoneInput, '+61400000001');
   75  | 
-> 76  |     await adminPage.click(SELECTORS.businessSetup.submitButton);
-      |                     ^ Error: page.click: Target page, context or browser has been closed
+  76  |     await adminPage.click(SELECTORS.businessSetup.submitButton);
   77  |     await adminPage.waitForURL('**/admin', { timeout: 15000 });
   78  |     console.log('✅ Business setup complete\n');
   79  | 
@@ -201,7 +200,4 @@ Call log:
   171 |     // ========================================
   172 |     // STEP 7: Create Rental
   173 |     // ========================================
-  174 |     console.log('🚙 STEP 7: Admin creates a rental...');
-  175 |     await adminPage.goto('/admin/rentals');
-  176 |     await adminPage.waitForTimeout(1000);
 ```

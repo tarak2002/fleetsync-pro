@@ -77,7 +77,10 @@ export const authMiddleware = async (
             driverStatus: driverStatus,
             businessId: dbUser?.business_id || user.user_metadata?.businessId
         };
-        
+
+        // SEC-FIX: Pass Supabase user metadata so /auth/me can access it
+        (req as any).supabaseUserMetadata = user.user_metadata;
+
         next();
     } catch (error) {
         console.error('Auth Middleware Error:', error);
