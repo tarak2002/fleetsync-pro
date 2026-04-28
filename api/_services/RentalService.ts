@@ -84,7 +84,6 @@ export class RentalService {
  weekly_rate: data.weekly_rate,
  next_payment_date: next_payment_date.toISOString(),
  status: 'ACTIVE' as RentalStatus,
- business_id: data.business_id,
  updated_at: new Date().toISOString()
  })
  .select('*, driver:drivers(*), vehicle:vehicles(*)')
@@ -117,13 +116,16 @@ export class RentalService {
  static async endRental(rental_id: string, businessId: string) {
  const { data: rental, error: fetchErr } = await supabase
  .from('rentals')
- .select('*')
+ .select('*, driver:drivers(*)')
  .eq('id', rental_id)
- .eq('business_id', businessId)
  .single();
 
  if (fetchErr || !rental) {
  throw new Error('Rental not found');
+ }
+
+ if (rental.driver?.business_id !== businessId) {
+ throw new Error('Unauthorized: rental does not belong to this business');
  }
 
  if (rental.status !== 'ACTIVE' as RentalStatus) {
@@ -139,7 +141,6 @@ export class RentalService {
  updated_at: new Date().toISOString()
  })
  .eq('id', rental_id)
- .eq('business_id', businessId)
  .select('*, driver:drivers(*), vehicle:vehicles(*)')
  .single();
 

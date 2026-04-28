@@ -47,7 +47,6 @@ const { data: invoice, error: invErr } = await supabase
  amount,
  due_date: due_date.toISOString(),
  status: 'PENDING' as InvoiceStatus,
- business_id: rental.business_id,
  updated_at: new Date().toISOString()
  })
  .select('*, rental:rentals(*, driver:drivers(*), vehicle:vehicles(*))')
